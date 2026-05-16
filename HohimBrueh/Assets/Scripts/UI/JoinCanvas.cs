@@ -37,6 +37,12 @@ public class JoinCanvas : MonoBehaviour
     float delay = 1f;
     InputState input = new InputState();
     float colorLerpAmount;
+    bool IsHostSlot()
+    {
+        var canvases = GameController.GetJoinCanvases();
+        return canvases != null && canvases.Length > 0 && canvases[0] == this;
+    }
+
     // Update is called once per frame
     void Update()
     {
@@ -49,6 +55,12 @@ public class JoinCanvas : MonoBehaviour
         {
 
             FreeLives.InputReader.GetInput(assignedPlayer.inputDevice, input);
+
+            if (IsHostSlot() && input.aButton && !input.wasAButton)
+            {
+                GameController.ToggleTeamMode();
+                return;
+            }
 
 
             if (GameController.isTeamMode)
@@ -113,10 +125,47 @@ public class JoinCanvas : MonoBehaviour
         else if (state == State.Ready)
         {
             FreeLives.InputReader.GetInput(assignedPlayer.inputDevice, input);
+            if (IsHostSlot() && input.aButton && !input.wasAButton)
+            {
+                GameController.ToggleTeamMode();
+                return;
+            }
             if (input.yButton && !input.wasYButton)
             {
                 UnAssignPlayer();
             }
+        }
+    }
+
+    public void RefreshForMode()
+    {
+        if (assignedPlayer == null) return;
+
+        if (GameController.isTeamMode)
+        {
+            // Switching FFA -> Team: release the pool color the player was using.
+            GameController.ReturnColor(color);
+
+            teamChangeColorObject.SetActive(true);
+            changeColorText.text = "CHANGE TEAM";
+
+            assignedPlayer.team = Random.value < 0.5f ? Team.Red : Team.Blue;
+            colorLerpAmount = Random.Range(0f, 0.7f);
+            color = assignedPlayer.color = Color.Lerp(
+                assignedPlayer.team == Team.Red ? Color.red : Color.blue,
+                Color.white,
+                colorLerpAmount);
+            frogImage.color = color;
+        }
+        else
+        {
+            // Switching Team -> FFA: team color wasn't from the pool, nothing to return.
+            teamChangeColorObject.SetActive(false);
+            changeColorText.text = "CHANGE COLOR";
+
+            color = GameController.GetAvailableColor();
+            assignedPlayer.color = color;
+            frogImage.color = color;
         }
     }
 

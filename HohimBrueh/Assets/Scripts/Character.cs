@@ -376,7 +376,10 @@ public class Character : MonoBehaviour
 
             }
             if (IngestedFly)
+            {
+                ingestingFly.Release();
                 Destroy(ingestingFly.gameObject);
+            }
             Destroy(gameObject);
         }
     }
@@ -780,7 +783,7 @@ public class Character : MonoBehaviour
         }
         if (!IngestedFly && ingestingFly != null)
         {
-            ingestingFly.BeingIngested = false;
+            ingestingFly.Release();
             ingestingFly = null;
         }
         if (hitDir.y < -0.1f)
@@ -815,7 +818,7 @@ public class Character : MonoBehaviour
             wasHitDownwards = true;
         if (!IngestedFly && ingestingFly != null)
         {
-            ingestingFly.BeingIngested = false;
+            ingestingFly.Release();
             ingestingFly = null;
         }
         hasReachedApex = false;
@@ -850,12 +853,12 @@ public class Character : MonoBehaviour
         {
             IngestedFly = false;
             ingestingFly.transform.position = Center;
-            ingestingFly.BeingIngested = false;
+            ingestingFly.Release();
             ingestingFly.gameObject.SetActive(true);
         }
         if (ingestingFly != null)
-        {   
-            ingestingFly.BeingIngested = false;
+        {
+            ingestingFly.Release();
             ingestingFly = null;
         }
         if (hitDir.y < -0.1f)
@@ -1291,11 +1294,11 @@ public class Character : MonoBehaviour
             var fly = Physics2D.OverlapCircle((Vector2)transform.position + tongueOrigin + tongueDir * tongueDistance, 0.5f, flyLayer);
             if (fly != null)
             {
-                if (!fly.GetComponent<Fly>().BeingIngested)
+                var flyComp = fly.GetComponent<Fly>();
+                if (flyComp.TryClaim(this))
                 {
                     tongueState = TongueState.RetractingHitFly;
-                    ingestingFly = fly.GetComponent<Fly>();
-                    ingestingFly.BeingIngested = true;
+                    ingestingFly = flyComp;
                     SoundController.PlaySoundEffect("TongueCollideSurface", 0.5f, TongueTipPos);
                 }
             }
@@ -1435,6 +1438,7 @@ public class Character : MonoBehaviour
                     tongueState = TongueState.HitFlyBurping;
                     tongueDelayLeft = 0.65f;
                     IngestedFly = true;
+                    ingestingFly.Release();
                     ingestingFly.gameObject.SetActive(false);
                 }
             }
