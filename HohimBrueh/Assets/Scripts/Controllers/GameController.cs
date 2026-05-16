@@ -18,7 +18,7 @@ public class GameController : MonoBehaviour
     public static bool charactersBounceEachOther = false;
     public static bool weirdBounceTrajectories = false;
     public static bool onlyBounceBeforeRecover = true;
-    public static bool allowTeamMode = false;
+    public static bool allowTeamMode = true;
 
     public static List<Player> activePlayers = new List<Player>();
 
@@ -171,7 +171,28 @@ public class GameController : MonoBehaviour
         foreach (var p in winningPlayers)
             activePlayers.Add(p);
         playersCanDropIn = false;
-       
+
+    }
+
+    public static JoinCanvas[] GetJoinCanvases()
+    {
+        return instance != null ? instance.joinCanvas : null;
+    }
+
+    public static void ToggleTeamMode()
+    {
+        if (!allowTeamMode || instance == null) return;
+        isTeamMode = !isTeamMode;
+        if (instance.joinGameModeText != null)
+            instance.joinGameModeText.text = isTeamMode ? "TEAM" : "FREE  FOR  ALL";
+        if (instance.joinCanvas != null)
+        {
+            foreach (var jc in instance.joinCanvas)
+            {
+                if (jc != null && jc.HasAssignedPlayer())
+                    jc.RefreshForMode();
+            }
+        }
     }
 
     void Start()
@@ -211,29 +232,8 @@ public class GameController : MonoBehaviour
             }
 
 
-            int assignedPlayers = 0;
-
-            for (int i = 0; i < joinCanvas.Length; i++)
-            {
-                if (joinCanvas[i].HasAssignedPlayer())
-                {
-                    assignedPlayers++;
-                }
-            }
-
             bool playersAreReady = CheckReadyPlayers();
 
-            if (assignedPlayers == 0)
-            {
-                InputReader.GetInput(combinedInput);
-                if (combinedInput.start && !combinedInput.wasStart && allowTeamMode)
-                {
-                    isTeamMode = !isTeamMode;
-                    joinGameModeText.text = isTeamMode ? "TEAM" : "FREE  FOR  ALL";
-                }
-
-            }
-            else
             if (playersAreReady)
             {
                 finishDelay -= Time.deltaTime;
@@ -376,6 +376,8 @@ public class GameController : MonoBehaviour
         availableColors = new List<Color>();
         availableColors.AddRange(playerColors);
 
+        if (joinGameModeText != null)
+            joinGameModeText.text = isTeamMode ? "TEAM" : "FREE  FOR  ALL";
     }
 
     bool CheckReadyPlayers()

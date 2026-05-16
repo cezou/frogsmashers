@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -10,6 +10,12 @@ public class Fly : MonoBehaviour
 
     public float maxSpeed;
     internal bool BeingIngested;
+    internal Character ingestedBy;
+
+    // Safety timeout: even with a valid owner, force release if a fly stays
+    // claimed for longer than this. Prevents pathological "stuck fly" states.
+    const float ingestTimeoutDuration = 3f;
+    float ingestTimeout;
 
     float updateDirectionDelay;
 
@@ -18,6 +24,23 @@ public class Fly : MonoBehaviour
     {
         terrainLayer = 1 << LayerMask.NameToLayer("Ground");
         velocity = Random.insideUnitCircle.normalized * 10f;
+    }
+
+    internal bool TryClaim(Character claimant)
+    {
+        if (ingestedBy != null && ingestedBy != claimant)
+            return false;
+        ingestedBy = claimant;
+        BeingIngested = true;
+        ingestTimeout = ingestTimeoutDuration;
+        return true;
+    }
+
+    internal void Release()
+    {
+        ingestedBy = null;
+        BeingIngested = false;
+        ingestTimeout = 0f;
     }
 
     // Update is called once per frame
@@ -29,6 +52,19 @@ public class Fly : MonoBehaviour
         {
             updateDirectionDelay = Random.Range(3f, 10f);
             UpdateDirection();
+        }
+
+        if (BeingIngested)
+        {
+            // Watchdog: the owner must still exist, be active, and still point at us.
+            // Otherwise the fly is orphaned (e.g. owner died, got knocked, or another
+            // tongue raced past the claim check on an older code path) — release it.
+            bool ownerLost = ingestedBy == null
+                             || !ingestedBy.gameObject.activeInHierarchy
+                             || ingestedBy.ingestingFly != this;
+            ingestTimeout -= Time.deltaTime;
+            if (ownerLost || ingestTimeout <= 0f)
+                Release();
         }
 
         if (!BeingIngested)
