@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using FreeLives;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 
@@ -327,13 +328,13 @@ public class GameController : MonoBehaviour
                     }
                 }
 
-                if (Input.GetKeyDown(KeyCode.F2))
+                if (Keyboard.current != null && Keyboard.current.f2Key.wasPressedThisFrame)
                 {
                     SpawnCharacter(null);
                 }
             }
 
-            if (Input.GetKeyDown(KeyCode.Escape))
+            if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
             {
                 UnityEngine.SceneManagement.SceneManager.LoadScene("TitleScreen");
             }
@@ -360,12 +361,12 @@ public class GameController : MonoBehaviour
                 FinishRound();
         }
 
-        if (Input.GetKeyDown(KeyCode.F6))
+        if (Keyboard.current != null && Keyboard.current.f6Key.wasPressedThisFrame)
         {
             SceneManager.LoadScene(SceneManager.GetActiveScene().name);
         }
 
-        if (Input.GetKeyDown(KeyCode.F12))
+        if (Keyboard.current != null && Keyboard.current.f12Key.wasPressedThisFrame)
         {
             showGui = !showGui;
         }

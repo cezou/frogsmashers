@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class TimeController : MonoBehaviour
 {
@@ -28,7 +29,7 @@ public class TimeController : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        if (Input.GetKeyDown(KeyCode.F1))
+        if (Keyboard.current != null && Keyboard.current.f1Key.wasPressedThisFrame)
         {
             if (Time.timeScale > 0.5f)
             {
