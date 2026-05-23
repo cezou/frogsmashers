@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using FreeLives;
 public class IntroAnimController : MonoBehaviour
 {
@@ -120,7 +121,7 @@ public class IntroAnimController : MonoBehaviour
 
         }
 
-        if (Input.GetKeyDown(KeyCode.S))
+        if (Keyboard.current != null && Keyboard.current.sKey.wasPressedThisFrame)
         {
             ShakeBackground();
         }
