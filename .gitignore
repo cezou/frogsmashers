@@ -9,6 +9,7 @@ HohimBrueh/[Bb]uild/
 HohimBrueh/[Bb]uilds/
 HohimBrueh/[Ll]ogs/
 HohimBrueh/[Mm]emoryCaptures/
+HohimBrueh/[Uu]serSettings/
 
 # Asset meta data should only be ignored when the corresponding asset is also ignored
 !/[Aa]ssets/**/*.meta

@@ -1,6 +1,6 @@
-﻿using UnityEngine;
-using System.Collections;
 using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
 
 namespace FreeLives
 {
@@ -11,51 +11,44 @@ namespace FreeLives
             Keyboard1, Keyboard2, Gamepad1, Gamepad2, Gamepad3, Gamepad4
         }
 
-        static KeyCode kb1Left = KeyCode.LeftArrow;
-        static KeyCode kb1Right = KeyCode.RightArrow;
-        static KeyCode kb1Up = KeyCode.UpArrow;
-        static KeyCode kb1Down = KeyCode.DownArrow;
-        static KeyCode kb1A = KeyCode.M;
-        static KeyCode kb1B = KeyCode.Comma;
-        static KeyCode kb1X = KeyCode.Period;
-        static KeyCode kb1Y = KeyCode.Slash;
-        static KeyCode kb1Start = KeyCode.Return;
+        // Keyboard 1 (arrows + m/,/./? + Enter)
+        static Key kb1Left = Key.LeftArrow;
+        static Key kb1Right = Key.RightArrow;
+        static Key kb1Up = Key.UpArrow;
+        static Key kb1Down = Key.DownArrow;
+        static Key kb1A = Key.M;
+        static Key kb1B = Key.Comma;
+        static Key kb1X = Key.Period;
+        static Key kb1Y = Key.Slash;
+        static Key kb1Start = Key.Enter;
 
-        static KeyCode kb2Left = KeyCode.A;
-        static KeyCode kb2Right = KeyCode.D;
-        static KeyCode kb2Up = KeyCode.W;
-        static KeyCode kb2Down = KeyCode.S;
-        static KeyCode kb2A = KeyCode.T;
-        static KeyCode kb2B = KeyCode.Y;
-        static KeyCode kb2X = KeyCode.U;
-        static KeyCode kb2Y = KeyCode.I;
-        static KeyCode kb2Start = KeyCode.Space;
-
+        // Keyboard 2 (WASD + tyui + Space)
+        static Key kb2Left = Key.A;
+        static Key kb2Right = Key.D;
+        static Key kb2Up = Key.W;
+        static Key kb2Down = Key.S;
+        static Key kb2A = Key.T;
+        static Key kb2B = Key.Y;
+        static Key kb2X = Key.U;
+        static Key kb2Y = Key.I;
+        static Key kb2Start = Key.Space;
 
         static float deadZone = 0.3f;
 
-//        static InputDevice[] inControlDevices = new InputDevice[4];
-
-        static bool haveInitialized;
-
         public static void GetInput(InputState inputState)
         {
-            if (UnityEngine.InputSystem.Gamepad.current != null)
+            if (Gamepad.current != null)
             {
-                GetGamepadInput(UnityEngine.InputSystem.Gamepad.current, inputState);
+                GetGamepadInput(Gamepad.current, inputState);
             }
             else
             {
                 GetKeyboard1Input(inputState);
-                
             }
         }
 
-
         public static void GetInput(Device device, InputState inputState)
         {
-            Initialize();
-
             CacheLastInput(inputState);
 
             if (device == Device.Keyboard1)
@@ -66,50 +59,25 @@ namespace FreeLives
             {
                 GetKeyboard2Input(inputState);
             }
-            else if (device == Device.Gamepad1)
+            else
             {
-                if (GamepadHasBeenAssigned(Device.Gamepad1))
-                {
-                    
-                    GetGamepadInput(UnityEngine.InputSystem.Gamepad.all[0], inputState);
-                }
+                int index = GamepadIndex(device);
+                if (index >= 0 && index < Gamepad.all.Count)
+                    GetGamepadInput(Gamepad.all[index], inputState);
                 else
-                {
                     ClearInputState(inputState);
-                }
             }
-            else if (device == Device.Gamepad2)
+        }
+
+        static int GamepadIndex(Device device)
+        {
+            switch (device)
             {
-                if (GamepadHasBeenAssigned(Device.Gamepad2))
-                {
-                    GetGamepadInput(UnityEngine.InputSystem.Gamepad.all[1], inputState);
-                }
-                else
-                {
-                    ClearInputState(inputState);
-                }
-            }
-            else if (device == Device.Gamepad3)
-            {
-                if (GamepadHasBeenAssigned(Device.Gamepad3))
-                {
-                    GetGamepadInput(UnityEngine.InputSystem.Gamepad.all[2], inputState);
-                }
-                else
-                {
-                    ClearInputState(inputState);
-                }
-            }
-            else if (device == Device.Gamepad4)
-            {
-                if (GamepadHasBeenAssigned(Device.Gamepad4))
-                {
-                    GetGamepadInput(UnityEngine.InputSystem.Gamepad.all[3], inputState);
-                }
-                else
-                {
-                    ClearInputState(inputState);
-                }
+                case Device.Gamepad1: return 0;
+                case Device.Gamepad2: return 1;
+                case Device.Gamepad3: return 2;
+                case Device.Gamepad4: return 3;
+                default: return -1;
             }
         }
 
@@ -119,7 +87,6 @@ namespace FreeLives
             inputState.wasBButton = inputState.bButton;
             inputState.wasXButton = inputState.xButton;
             inputState.wasYButton = inputState.yButton;
-
             inputState.wasLeft = inputState.left;
             inputState.wasRight = inputState.right;
             inputState.wasUp = inputState.up;
@@ -127,157 +94,83 @@ namespace FreeLives
             inputState.wasStart = inputState.start;
         }
 
-        private static void Initialize()
+        static bool KeyPressed(Key key)
         {
-            if (haveInitialized)
-                return;
-            haveInitialized = true;
-
-            int i = 0;
-//            foreach (var device in InputManager.Devices)
-//            {
-//                
-//                if (device != null)
-//                {
-//                    inControlDevices[i] = device;
-//                    i++;
-//                }
-//            }
-
+            var kb = Keyboard.current;
+            return kb != null && kb[key].isPressed;
         }
-
-        
 
         static void GetKeyboard1Input(InputState inputState)
         {
             inputState.xAxis = inputState.yAxis = inputState.leftTrigger = inputState.rightTrigger = 0f;
-            if (Input.GetKey(kb1Left))
-            {
-                inputState.xAxis -= 1f;
-            }
-            if (Input.GetKey(kb1Right))
-            {
-                inputState.xAxis += 1f;
-            }
-            if (Input.GetKey(kb1Up))
-            {
-                inputState.yAxis += 1f;
-            }
-            if (Input.GetKey(kb1Down))
-            {
-                inputState.yAxis -= 1f;
-            }
+            if (KeyPressed(kb1Left)) inputState.xAxis -= 1f;
+            if (KeyPressed(kb1Right)) inputState.xAxis += 1f;
+            if (KeyPressed(kb1Up)) inputState.yAxis += 1f;
+            if (KeyPressed(kb1Down)) inputState.yAxis -= 1f;
 
-            inputState.up = Input.GetKey(kb1Up);
-            inputState.down = Input.GetKey(kb1Down);
-            inputState.left = Input.GetKey(kb1Left);
-            inputState.right = Input.GetKey(kb1Right);
+            inputState.up = KeyPressed(kb1Up);
+            inputState.down = KeyPressed(kb1Down);
+            inputState.left = KeyPressed(kb1Left);
+            inputState.right = KeyPressed(kb1Right);
 
-            inputState.yButton = Input.GetKey(kb1Y);
-            inputState.xButton = Input.GetKey(kb1X);
-            inputState.aButton = Input.GetKey(kb1A);
-            inputState.bButton = Input.GetKey(kb1B);
-            inputState.start = Input.GetKey(kb1Start);
+            inputState.yButton = KeyPressed(kb1Y);
+            inputState.xButton = KeyPressed(kb1X);
+            inputState.aButton = KeyPressed(kb1A);
+            inputState.bButton = KeyPressed(kb1B);
+            inputState.start = KeyPressed(kb1Start);
         }
 
         static void GetKeyboard2Input(InputState inputState)
         {
             inputState.xAxis = inputState.yAxis = inputState.leftTrigger = inputState.rightTrigger = 0f;
-            if (Input.GetKey(kb2Left))
-            {
-                inputState.xAxis -= 1f;
-            }
-            if (Input.GetKey(kb2Right))
-            {
-                inputState.xAxis += 1f;
-            }
-            if (Input.GetKey(kb2Up))
-            {
-                inputState.yAxis += 1f;
-            }
-            if (Input.GetKey(kb2Down))
-            {
-                inputState.yAxis -= 1f;
-            }
+            if (KeyPressed(kb2Left)) inputState.xAxis -= 1f;
+            if (KeyPressed(kb2Right)) inputState.xAxis += 1f;
+            if (KeyPressed(kb2Up)) inputState.yAxis += 1f;
+            if (KeyPressed(kb2Down)) inputState.yAxis -= 1f;
 
-            inputState.up = Input.GetKey(kb2Up);
-            inputState.down = Input.GetKey(kb2Down);
-            inputState.left = Input.GetKey(kb2Left);
-            inputState.right = Input.GetKey(kb2Right);
+            inputState.up = KeyPressed(kb2Up);
+            inputState.down = KeyPressed(kb2Down);
+            inputState.left = KeyPressed(kb2Left);
+            inputState.right = KeyPressed(kb2Right);
 
-            inputState.yButton = Input.GetKey(kb2Y);
-            inputState.xButton = Input.GetKey(kb2X);
-            inputState.aButton = Input.GetKey(kb2A);
-            inputState.bButton = Input.GetKey(kb2B);
-            inputState.start = Input.GetKey(kb2Start);
+            inputState.yButton = KeyPressed(kb2Y);
+            inputState.xButton = KeyPressed(kb2X);
+            inputState.aButton = KeyPressed(kb2A);
+            inputState.bButton = KeyPressed(kb2B);
+            inputState.start = KeyPressed(kb2Start);
         }
 
-
-
-        static void GetGamepadInput(UnityEngine.InputSystem.Gamepad device, InputState inputState)
+        // Cross-platform mapping. The InputState "aButton" etc. names are kept
+        // for codebase compatibility, but map to physical positions:
+        //   aButton = south (Xbox A, PS Cross/X, Nintendo B)
+        //   bButton = east  (Xbox B, PS Circle,  Nintendo A)
+        //   xButton = west  (Xbox X, PS Square,  Nintendo Y)
+        //   yButton = north (Xbox Y, PS Triangle, Nintendo X)
+        static void GetGamepadInput(Gamepad device, InputState inputState)
         {
-            if (device == null)
-                return;
-//            inputState.xAxis = device.LeftStickX;
-//            inputState.yAxis = device.LeftStickY;
+            if (device == null) return;
 
+            Vector2 ls = device.leftStick.ReadValue();
+            inputState.right = ls.x > deadZone || device.dpad.right.isPressed;
+            inputState.left = ls.x < -deadZone || device.dpad.left.isPressed;
+            inputState.up = ls.y > deadZone || device.dpad.up.isPressed;
+            inputState.down = ls.y < -deadZone || device.dpad.down.isPressed;
 
-            inputState.right = (device.leftStick.ReadValue().x > deadZone) || device.dpad.right.isPressed;
-            inputState.left = (device.leftStick.ReadValue().x < -deadZone) || device.dpad.left.isPressed;
-            inputState.up = (device.leftStick.ReadValue().y > deadZone) || device.dpad.up.isPressed;
-            inputState.down = (device.leftStick.ReadValue().y < -deadZone) || device.dpad.down.isPressed;
-
-            inputState.aButton = device.aButton.isPressed;
-            inputState.bButton = device.bButton.isPressed;
-            inputState.xButton = device.xButton.isPressed;
-            inputState.yButton = device.yButton.isPressed;
+            inputState.aButton = device.buttonSouth.isPressed;
+            inputState.bButton = device.buttonEast.isPressed;
+            inputState.xButton = device.buttonWest.isPressed;
+            inputState.yButton = device.buttonNorth.isPressed;
 
             inputState.leftTrigger = device.leftTrigger.ReadValue();
             inputState.rightTrigger = device.rightTrigger.ReadValue();
             inputState.start = device.startButton.isPressed;
-
         }
-
-        
 
         public static void ClearInputState(InputState inputState)
         {
             inputState.rightTrigger = inputState.leftTrigger = inputState.xAxis = inputState.yAxis = 0f;
-            inputState.left = inputState.right = inputState.up = inputState.down = inputState.aButton = inputState.bButton = inputState.xButton = inputState.yButton = false;
+            inputState.left = inputState.right = inputState.up = inputState.down
+                = inputState.aButton = inputState.bButton = inputState.xButton = inputState.yButton = false;
         }
-
-
-       
-        static bool GamepadHasBeenAssigned(Device device)
-        {
-            int index = 0;
-
-            switch (device)
-            {
-                case Device.Gamepad1:
-                    index = 0;
-                    break;
-                case Device.Gamepad2:
-                    index = 1;
-                    break;
-                case Device.Gamepad3:
-                    index = 2;
-                    break;
-                case Device.Gamepad4:
-                    index = 3;
-                    break;
-                default:
-                    break;
-            }
-
-            return UnityEngine.InputSystem.Gamepad.all.Count > index;
-//            return inControlDevices[index] != null;
-//            return false;
-
-        }
-
-       
-
-
     }
 }
