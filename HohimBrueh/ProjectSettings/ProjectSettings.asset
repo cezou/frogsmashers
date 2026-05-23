@@ -710,9 +710,11 @@ PlayerSettings:
   webEnableSubmoduleStrippingCompatibility: 0
   scriptingDefineSymbols: {}
   additionalCompilerArguments: {}
-  platformArchitecture: {}
+  platformArchitecture:
+    Server: 0
   scriptingBackend:
     Android: 0
+    Server: 1
     Standalone: 0
     WebPlayer: 0
   il2cppCompilerConfiguration: {}
