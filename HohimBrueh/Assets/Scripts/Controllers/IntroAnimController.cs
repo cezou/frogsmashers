@@ -82,7 +82,7 @@ public class IntroAnimController : MonoBehaviour
         {
             if (input.start && !input.wasStart)
             {
-                UnityEngine.SceneManagement.SceneManager.LoadScene("JoinScreen");
+                UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenu");
             }
         }
         else

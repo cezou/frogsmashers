@@ -11,6 +11,15 @@ HohimBrueh/[Ll]ogs/
 HohimBrueh/[Mm]emoryCaptures/
 HohimBrueh/[Uu]serSettings/
 
+# Root-level build output (manual builds)
+/builds/
+
+# Unity baked lighting per-scene artifacts (regenerated on demand)
+HohimBrueh/Assets/Scenes/**/LightingData.asset
+HohimBrueh/Assets/Scenes/**/LightingData.asset.meta
+HohimBrueh/Assets/Scenes/**/ReflectionProbe-*.exr
+HohimBrueh/Assets/Scenes/**/ReflectionProbe-*.exr.meta
+
 # Asset meta data should only be ignored when the corresponding asset is also ignored
 !/[Aa]ssets/**/*.meta
 

@@ -208,8 +208,14 @@ public class GameController : MonoBehaviour
     FreeLives.InputState combinedInput = new InputState();
     void Update()
     {
-
-        
+        bool backToMenu =
+            (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) ||
+            (Gamepad.current != null && Gamepad.current.startButton.wasPressedThisFrame);
+        if (backToMenu)
+        {
+            UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenu");
+            return;
+        }
 
         if (state == GameState.JoinScreen)
         {
@@ -334,10 +340,6 @@ public class GameController : MonoBehaviour
                 }
             }
 
-            if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
-            {
-                UnityEngine.SceneManagement.SceneManager.LoadScene("TitleScreen");
-            }
         }
         else if (state == GameState.RoundFinished)
         {
