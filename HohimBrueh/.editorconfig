@@ -1,0 +1,128 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.{cs,csx}]
+indent_size = 4
+max_line_length = 80
+
+# Formatting --------------------------------------------------------
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+csharp_space_after_keywords_in_control_flow_statements = true
+csharp_space_between_method_declaration_parameter_list_parentheses = false
+csharp_space_between_method_call_parameter_list_parentheses = false
+
+# 'var' usage --------------------------------------------------------
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = false:suggestion
+
+# 'this.' qualification (Unity convention: no 'this.') ---------------
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion
+
+# Naming: types/methods = PascalCase, locals/private fields = camelCase
+dotnet_naming_rule.types_pascal.symbols              = types
+dotnet_naming_rule.types_pascal.style                = pascal_case
+dotnet_naming_rule.types_pascal.severity             = warning
+dotnet_naming_symbols.types.applicable_kinds         = class,struct,interface,enum,delegate
+dotnet_naming_symbols.types.applicable_accessibilities = *
+
+dotnet_naming_rule.methods_pascal.symbols            = methods
+dotnet_naming_rule.methods_pascal.style              = pascal_case
+dotnet_naming_rule.methods_pascal.severity           = warning
+dotnet_naming_symbols.methods.applicable_kinds       = method
+dotnet_naming_symbols.methods.applicable_accessibilities = *
+
+dotnet_naming_rule.public_fields_pascal.symbols      = public_fields
+dotnet_naming_rule.public_fields_pascal.style        = pascal_case
+dotnet_naming_rule.public_fields_pascal.severity     = suggestion
+dotnet_naming_symbols.public_fields.applicable_kinds = field
+dotnet_naming_symbols.public_fields.applicable_accessibilities = public
+
+dotnet_naming_rule.private_fields_camel.symbols      = private_fields
+dotnet_naming_rule.private_fields_camel.style        = camel_case
+dotnet_naming_rule.private_fields_camel.severity     = warning
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private,internal,protected,protected_internal
+
+dotnet_naming_rule.locals_camel.symbols              = locals
+dotnet_naming_rule.locals_camel.style                = camel_case
+dotnet_naming_rule.locals_camel.severity             = warning
+dotnet_naming_symbols.locals.applicable_kinds        = local,parameter
+
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+dotnet_naming_style.camel_case.capitalization  = camel_case
+
+# StyleCop overrides -------------------------------------------------
+# Disabled rules that fight Unity / SquidNorm:
+dotnet_diagnostic.SA1101.severity = none   # this. prefix not required
+dotnet_diagnostic.SA1200.severity = none   # using outside namespace OK
+dotnet_diagnostic.SA1413.severity = none   # trailing commas optional
+dotnet_diagnostic.SA1500.severity = none   # braces layout
+dotnet_diagnostic.SA1600.severity = none   # public docs not mandatory
+dotnet_diagnostic.SA1601.severity = none   # partial docs
+dotnet_diagnostic.SA1602.severity = none   # enum docs
+dotnet_diagnostic.SA1633.severity = none   # no file header
+dotnet_diagnostic.SA1652.severity = none   # docs validity
+dotnet_diagnostic.SA1117.severity = none   # param line layout
+dotnet_diagnostic.SA1118.severity = none   # param span lines
+dotnet_diagnostic.SA1116.severity = none   # split param first line
+dotnet_diagnostic.SA1124.severity = none   # do not use regions (we don't)
+dotnet_diagnostic.SA1309.severity = none   # underscore prefix — we have FreeLives kb1Left etc.
+dotnet_diagnostic.SA1310.severity = none   # underscore in field names
+dotnet_diagnostic.SA1311.severity = none   # static readonly field naming
+dotnet_diagnostic.SA1503.severity = none   # braces required around single statements
+dotnet_diagnostic.SA1502.severity = none   # element body on same line
+dotnet_diagnostic.SA1516.severity = none   # blank line between elements
+dotnet_diagnostic.SA1518.severity = none   # newline at end of file (we enforce via .editorconfig)
+dotnet_diagnostic.SA1009.severity = none   # closing paren spacing
+dotnet_diagnostic.SA1010.severity = none   # opening bracket spacing
+dotnet_diagnostic.SA1011.severity = none   # closing bracket spacing
+dotnet_diagnostic.SA1025.severity = none   # multi-whitespace (we align)
+dotnet_diagnostic.SA1028.severity = none   # trailing whitespace in trivia
+dotnet_diagnostic.SA1407.severity = none   # arithmetic precedence parens
+dotnet_diagnostic.SA1515.severity = none   # comment blank line above
+dotnet_diagnostic.SA1614.severity = none   # parameter docs text
+dotnet_diagnostic.SA1615.severity = none   # element return value docs
+dotnet_diagnostic.SA1618.severity = none   # generic type param docs
+dotnet_diagnostic.SA1611.severity = none   # element parameters docs
+dotnet_diagnostic.SA1623.severity = none   # property summary text
+dotnet_diagnostic.SA1629.severity = none   # docs end with period
+dotnet_diagnostic.SA1642.severity = none   # constructor summary text
+
+# Enforce SquidNorm-aligned rules:
+dotnet_diagnostic.SA1500.severity = none
+
+# Third-party paths: suppress all StyleCop diagnostics ----------------
+[Assets/Standard Assets/**.cs]
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.SpacingRules.severity = none
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.ReadabilityRules.severity = none
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.OrderingRules.severity = none
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.NamingRules.severity = none
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.MaintainabilityRules.severity = none
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.LayoutRules.severity = none
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.DocumentationRules.severity = none
+generated_code = true
+
+[Assets/Free Lives Commonwealth/**.cs]
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.SpacingRules.severity = none
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.ReadabilityRules.severity = none
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.OrderingRules.severity = none
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.NamingRules.severity = none
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.MaintainabilityRules.severity = none
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.LayoutRules.severity = none
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.DocumentationRules.severity = none
+generated_code = true
