@@ -1,32 +1,16 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
+/// <summary>
+/// Slow-motion helper. Gameplay slow-mo is per-character data
+/// (Character.TimeBump) so the fixed-rate simulation stays deterministic;
+/// global Time.timeScale is only touched by the editor debug key.
+/// </summary>
 public class TimeController : MonoBehaviour
 {
-
-    static TimeController instance;
-
-    float timeBumpTimeLeft;
-
-    public float timeBumpTime, timeBumpScale;
-
-    bool timeBumpedThisFrame;
-
-    public static bool TimeBumpActive
-    {
-        get
-        { return instance.timeBumpTimeLeft > 0f; }
-    }
-
-    // Use this for initialization
-    void Awake()
-    {
-        instance = this;
-    }
-
-    // Update is called once per frame
+#if UNITY_EDITOR
     void Update()
     {
         if (Keyboard.current != null && Keyboard.current.f1Key.wasPressedThisFrame)
@@ -40,23 +24,10 @@ public class TimeController : MonoBehaviour
                 Time.timeScale = 1f;
             }
         }
-
-        if (timeBumpTimeLeft > 0f)
-        {
-            if (timeBumpedThisFrame)
-            {
-                timeBumpedThisFrame = false;
-
-            }
-            else
-            {
-                timeBumpTimeLeft -= Time.deltaTime / Time.timeScale;
-                if (timeBumpTimeLeft <= 0f)
-                    Time.timeScale = 1f;
-            }
-        }
     }
+#endif
 
+    /// <summary>Applies a radial slow-mo bump to nearby characters.</summary>
     public static void TimeBumpCharacters(Vector2 center, float durationM, float radius, bool dropOff)
     {
         foreach (var player in GameController.activePlayers)
@@ -67,18 +38,9 @@ public class TimeController : MonoBehaviour
                 if (dist < radius)
                 {
                     float m = dist / radius;
-                    player.character.TimeBump(durationM,dropOff ? m * m : 0f);
+                    player.character.TimeBump(durationM, dropOff ? m * m : 0f);
                 }
             }
         }
-    }
-
-
-    public static void Timebump(float intensity)
-    {
-
-        instance.timeBumpTimeLeft = instance.timeBumpTime * Mathf.Clamp(intensity, 1f, 5f);
-        Time.timeScale = instance.timeBumpScale;
-        instance.timeBumpedThisFrame = true;
     }
 }

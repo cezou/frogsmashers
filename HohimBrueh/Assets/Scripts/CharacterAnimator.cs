@@ -145,7 +145,9 @@ public class CharacterAnimator : MonoBehaviour
     {
         get
         {
-            return character.t;
+            if (character.TimeBumpActive)
+                return Time.deltaTime * character.timeBumpTimeScale;
+            return Time.deltaTime;
         }
     }
 

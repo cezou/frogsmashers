@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using FreeLives;
+using FrogSmashers.Net.Sim;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
@@ -14,7 +15,7 @@ public enum GameState
 }
 
 
-public class GameController : MonoBehaviour
+public class GameController : MonoBehaviour, ISimTickable
 {
     public static bool charactersBounceEachOther = false;
     public static bool weirdBounceTrajectories = false;
@@ -206,6 +207,80 @@ public class GameController : MonoBehaviour
 
     FreeLives.InputState input = new InputState();
     FreeLives.InputState combinedInput = new InputState();
+
+    /// <summary>Match flow ticks before characters and flies.</summary>
+    public int SimOrder
+    {
+        get { return 0; }
+    }
+
+    void OnEnable()
+    {
+        SimulationDriver.Register(this);
+    }
+
+    void OnDisable()
+    {
+        SimulationDriver.Unregister(this);
+    }
+
+    /// <summary>Advances match-flow state by one fixed simulation step.</summary>
+    public void SimTick(float dt)
+    {
+        if (state == GameState.Playing)
+            TickPlaying(dt);
+        else if (state == GameState.RoundFinished)
+            TickRoundFinished(dt);
+    }
+
+    void TickPlaying(float dt)
+    {
+        if (activeFly == null && !isShowDown)
+        {
+            if (flySpawnDelay > 0f)
+            {
+                flySpawnDelay -= dt;
+                if (flySpawnDelay <= 0f)
+                    activeFly = Instantiate(flyPrefab, Terrain.GetFlySpawnPoint(), Quaternion.identity);
+            }
+            else
+            {
+                flySpawnDelay = Random.Range(15f, 45f);
+            }
+        }
+
+        for (int i = 0; i < activePlayers.Count; i++)
+        {
+            if (activePlayers[i].character == null)
+            {
+                activePlayers[i].spawnDelay -= dt;
+                if (activePlayers[i].spawnDelay < 0f)
+                {
+                    SpawnCharacter(activePlayers[i]);
+                }
+            }
+        }
+    }
+
+    void TickRoundFinished(float dt)
+    {
+        for (int i = 0; i < activePlayers.Count; i++)
+        {
+            if (activePlayers[i].character == null && winningPlayer == activePlayers[i])
+            {
+                activePlayers[i].spawnDelay -= dt;
+                if (activePlayers[i].spawnDelay < 0f)
+                {
+                    SpawnCharacter(activePlayers[i]);
+                }
+            }
+        }
+
+        finishDelay -= dt;
+        if (finishDelay < 0f)
+            FinishRound();
+    }
+
     void Update()
     {
         bool backToMenu =
@@ -258,34 +333,8 @@ public class GameController : MonoBehaviour
         }
         else if (state == GameState.Playing)
         {
-            if (activeFly == null && !isShowDown)
-            {
-                if (flySpawnDelay > 0f)
-                {
-                    flySpawnDelay -= Time.deltaTime;
-                    if (flySpawnDelay <= 0f)
-                        activeFly = Instantiate(flyPrefab, Terrain.GetFlySpawnPoint(), Quaternion.identity);
-                }
-                else
-                {
-                    flySpawnDelay = Random.Range(15f, 45f);
-                }
-
-
-            }
-
-
             for (int i = 0; i < activePlayers.Count; i++)
             {
-                if (activePlayers[i].character == null)
-                {
-                    activePlayers[i].spawnDelay -= Time.deltaTime;
-                    if (activePlayers[i].spawnDelay < 0f)
-                    {
-                        SpawnCharacter(activePlayers[i]);
-                    }
-                }
-
                 if (activePlayers[i].character != null && activePlayers[i].character.transform.position.y > Terrain.ScreenTop)
                 {
 
@@ -344,23 +393,6 @@ public class GameController : MonoBehaviour
         else if (state == GameState.RoundFinished)
         {
             ArrangeScoreboards();
-
-            for (int i = 0; i < activePlayers.Count; i++)
-            {
-                if (activePlayers[i].character == null && winningPlayer == activePlayers[i])
-                {
-                    activePlayers[i].spawnDelay -= Time.deltaTime;
-                    if (activePlayers[i].spawnDelay < 0f)
-                    {
-                        SpawnCharacter(activePlayers[i]);
-                    }
-                }
-            }
-
-
-            finishDelay -= Time.deltaTime;
-            if (finishDelay < 0f)
-                FinishRound();
         }
 
         if (Keyboard.current != null && Keyboard.current.f6Key.wasPressedThisFrame)

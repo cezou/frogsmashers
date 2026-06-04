@@ -1,7 +1,8 @@
-﻿ using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using FreeLives;
+using FrogSmashers.Net.Sim;
 using System;
 
 public enum CharacterState
@@ -30,7 +31,7 @@ public enum TongueState
     HitFlyBurping
 }
 
-public class Character : MonoBehaviour
+public class Character : MonoBehaviour, ISimTickable
 {
     [HideInInspector]
     public InputState input = new InputState();
@@ -251,6 +252,22 @@ public class Character : MonoBehaviour
         flyLayer = 1 << LayerMask.NameToLayer("Fly");
     }
 
+    /// <summary>Characters tick after GameController, before flies.</summary>
+    public int SimOrder
+    {
+        get { return 100; }
+    }
+
+    void OnEnable()
+    {
+        SimulationDriver.Register(this);
+    }
+
+    void OnDisable()
+    {
+        SimulationDriver.Unregister(this);
+    }
+
     void CheckInput()
     {
         if (player == null)
@@ -282,19 +299,19 @@ public class Character : MonoBehaviour
         return false;
     }
 
-    // Update is called once per frame
-    void Update()
+    /// <summary>Advances this character by one fixed simulation step.</summary>
+    public void SimTick(float dt)
     {
         CheckInput();
 
         if (TimeBumpActive)
         {
-            timeBumpTimeLeft -= Time.deltaTime;
-            t = Time.deltaTime * timeBumpTimeScale;
+            timeBumpTimeLeft -= dt;
+            t = dt * timeBumpTimeScale;
         }
         else
         {
-            t = Time.deltaTime;
+            t = dt;
         }
 
         if (state != CharacterState.Bouncing)
@@ -310,7 +327,8 @@ public class Character : MonoBehaviour
         else if (state == CharacterState.Tounge)
             RunTongue();
 
-        if (input.yButton && !input.wasYButton && Application.isEditor)
+#if UNITY_EDITOR
+        if (input.yButton && !input.wasYButton)
         {
             Vector2 dir = Vector2.zero;
             if (input.right)
@@ -323,12 +341,10 @@ public class Character : MonoBehaviour
                 dir -= Vector2.up;
 
             GetHit(dir, UnityEngine.Random.value, this);
-
         }
+#endif
 
         CheckDeath();
-
-
     }
 
     void CheckDeath()

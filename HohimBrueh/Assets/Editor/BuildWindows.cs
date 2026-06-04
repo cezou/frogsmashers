@@ -28,11 +28,15 @@ namespace FrogSmashers.Editor
             foreach (var s in EditorBuildSettings.scenes)
                 if (s.enabled) scenes.Add(s.path);
 
+            EditorUserBuildSettings.standaloneBuildSubtarget =
+                StandaloneBuildSubtarget.Player;
+
             var options = new BuildPlayerOptions
             {
                 scenes = scenes.ToArray(),
                 locationPathName = Path.Combine(outputDir, ExeName),
                 target = BuildTarget.StandaloneWindows64,
+                subtarget = (int)StandaloneBuildSubtarget.Player,
                 options = BuildOptions.None,
             };
 

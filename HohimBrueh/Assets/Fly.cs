@@ -1,8 +1,9 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using FrogSmashers.Net.Sim;
 
-public class Fly : MonoBehaviour
+public class Fly : MonoBehaviour, ISimTickable
 {
     Vector2 velocity, targetVelocity;
     int terrainLayer;
@@ -26,6 +27,22 @@ public class Fly : MonoBehaviour
         velocity = Random.insideUnitCircle.normalized * 10f;
     }
 
+    /// <summary>Flies tick after every character.</summary>
+    public int SimOrder
+    {
+        get { return 200; }
+    }
+
+    void OnEnable()
+    {
+        SimulationDriver.Register(this);
+    }
+
+    void OnDisable()
+    {
+        SimulationDriver.Unregister(this);
+    }
+
     internal bool TryClaim(Character claimant)
     {
         if (ingestedBy != null && ingestedBy != claimant)
@@ -43,11 +60,10 @@ public class Fly : MonoBehaviour
         ingestTimeout = 0f;
     }
 
-    // Update is called once per frame
-    void Update()
+    /// <summary>Advances this fly by one fixed simulation step.</summary>
+    public void SimTick(float dt)
     {
-
-        updateDirectionDelay -= Time.deltaTime;
+        updateDirectionDelay -= dt;
         if (updateDirectionDelay < 0f)
         {
             updateDirectionDelay = Random.Range(3f, 10f);
@@ -62,24 +78,23 @@ public class Fly : MonoBehaviour
             bool ownerLost = ingestedBy == null
                              || !ingestedBy.gameObject.activeInHierarchy
                              || ingestedBy.ingestingFly != this;
-            ingestTimeout -= Time.deltaTime;
+            ingestTimeout -= dt;
             if (ownerLost || ingestTimeout <= 0f)
                 Release();
         }
 
         if (!BeingIngested)
-            RunMotion();
+            RunMotion(dt);
 
         if (transform.position.x < Terrain.LeftKillPoint || transform.position.x > Terrain.RightKillPoint || transform.position.y > Terrain.TopKillPoint || transform.position.y < Terrain.BotKillPoint)
             Destroy(gameObject);
-
     }
 
-    void RunMotion()
+    void RunMotion(float dt)
     {
-        velocity = Vector2.MoveTowards(velocity, targetVelocity, 5f * Time.deltaTime);
+        velocity = Vector2.MoveTowards(velocity, targetVelocity, 5f * dt);
 
-        Vector2 velocityT = velocity * Time.deltaTime + Vector2.up * Mathf.Sin(Time.time * 8f) * 3f * Time.deltaTime;
+        Vector2 velocityT = velocity * dt + Vector2.up * Mathf.Sin(SimClock.SimTime * 8f) * 3f * dt;
         if (velocityT.x < 0)
         {
             if (Physics2D.Raycast(transform.position, Vector2.left, Mathf.Abs(velocityT.x) + 1f, terrainLayer))
