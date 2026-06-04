@@ -34,6 +34,9 @@ public class Player
 
     public Character character;
 
+    /// <summary>Deactivated instance kept for respawn and rollback.</summary>
+    public Character pooledCharacter;
+
     public float spawnDelay = 0f;
 
 }

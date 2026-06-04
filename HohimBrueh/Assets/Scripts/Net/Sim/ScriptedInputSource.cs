@@ -13,7 +13,14 @@ namespace FrogSmashers.Net.Sim
 
         public void Read(InputReader.Device device, InputState target)
         {
-            uint phase = SimClock.CurrentTick / phaseTicks;
+            ReadForTick(SimClock.CurrentTick, device, target);
+        }
+
+        /// <summary>Generates the input of an arbitrary tick.</summary>
+        public static void ReadForTick(
+            uint tick, InputReader.Device device, InputState target)
+        {
+            uint phase = tick / phaseTicks;
             uint h = Scramble(phase, (uint)device);
 
             bool left = (h & 1u) != 0 && (h & 2u) == 0;

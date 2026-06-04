@@ -26,6 +26,21 @@ namespace FrogSmashers.Net.Sim
         /// <summary>Runs exactly N ticks per frame when set (harness).</summary>
         public static int ForcedTicksPerFrame { get; set; }
 
+        /// <summary>True while a rollback resimulation is running.</summary>
+        public static bool IsResimulating { get; set; }
+
+        /// <summary>Fires before every live step (rollback checkpoint).</summary>
+        public static event System.Action BeforeStep;
+
+        /// <summary>Fires after every step with the completed tick.</summary>
+        public static event System.Action<uint> TickCompleted;
+
+        /// <summary>Runs one raw step during resimulation (no hooks).</summary>
+        public static void StepNow()
+        {
+            Step();
+        }
+
         class Entry
         {
             public ISimTickable Tickable;
@@ -87,7 +102,10 @@ namespace FrogSmashers.Net.Sim
             if (ForcedTicksPerFrame > 0)
             {
                 for (int i = 0; i < ForcedTicksPerFrame; i++)
+                {
+                    BeforeStep?.Invoke();
                     Step();
+                }
                 return;
             }
             accumulator += Time.deltaTime;
@@ -97,6 +115,7 @@ namespace FrogSmashers.Net.Sim
             {
                 accumulator -= SimClock.TickDt;
                 steps++;
+                BeforeStep?.Invoke();
                 Step();
             }
             if (steps == maxTicksPerFrame)
@@ -105,6 +124,7 @@ namespace FrogSmashers.Net.Sim
 
         static void Step()
         {
+            Physics2D.SyncTransforms();
             SimClock.Advance();
             SortIfDirty();
             scratch.Clear();
@@ -114,6 +134,7 @@ namespace FrogSmashers.Net.Sim
                 if (scratch[i].Active)
                     scratch[i].Tickable.SimTick(SimClock.TickDt);
             }
+            TickCompleted?.Invoke(SimClock.CurrentTick);
         }
 
         static void SortIfDirty()
@@ -121,6 +142,8 @@ namespace FrogSmashers.Net.Sim
             if (!dirty)
                 return;
             dirty = false;
+            for (int i = 0; i < tickables.Count; i++)
+                tickables[i].Order = tickables[i].Tickable.SimOrder;
             tickables.Sort(CompareEntries);
         }
 
