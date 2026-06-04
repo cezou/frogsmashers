@@ -20,6 +20,12 @@ namespace FrogSmashers.Net.Sim
 
         float accumulator;
 
+        /// <summary>Stops ticking (scene transitions, harness resets).</summary>
+        public static bool Paused { get; set; }
+
+        /// <summary>Runs exactly N ticks per frame when set (harness).</summary>
+        public static int ForcedTicksPerFrame { get; set; }
+
         class Entry
         {
             public ISimTickable Tickable;
@@ -73,6 +79,17 @@ namespace FrogSmashers.Net.Sim
 
         void Update()
         {
+            if (Paused)
+            {
+                accumulator = 0f;
+                return;
+            }
+            if (ForcedTicksPerFrame > 0)
+            {
+                for (int i = 0; i < ForcedTicksPerFrame; i++)
+                    Step();
+                return;
+            }
             accumulator += Time.deltaTime;
             int steps = 0;
             while (accumulator >= SimClock.TickDt

@@ -237,11 +237,6 @@ public class Character : MonoBehaviour, ISimTickable
         }
     }
 
-    void Start()
-    {
-        CheckInput();
-    }
-
     // Use this for initialization
     void Awake()
     {
@@ -297,6 +292,45 @@ public class Character : MonoBehaviour, ISimTickable
             return player == GameController.GetWinningPlayer();
         }
         return false;
+    }
+
+    /// <summary>Mixes this character's mutable sim state into a hash.</summary>
+    public uint HashSimState(uint h)
+    {
+        h = StateHash.Mix(h, (Vector2)transform.position);
+        h = StateHash.Mix(h, velocity);
+        h = StateHash.Mix(h, (int)state);
+        h = StateHash.Mix(h, (int)attackState);
+        h = StateHash.Mix(h, (int)tongueState);
+        h = StateHash.Mix(h, hitsTaken);
+        h = StateHash.Mix(h, facingDir);
+        h = StateHash.Mix(h, onGround);
+        h = StateHash.Mix(h, timeSinceHit);
+        h = StateHash.Mix(h, timeBumpTimeLeft);
+        h = StateHash.Mix(h, timeBumpTimeScale);
+        h = StateHash.Mix(h, attackChargeCounter);
+        h = StateHash.Mix(h, attackTimeLeft);
+        h = StateHash.Mix(h, attackRecoverTimeLeft);
+        h = StateHash.Mix(h, attackDir);
+        h = StateHash.Mix(h, tongueDir);
+        h = StateHash.Mix(h, tongueDistance);
+        h = StateHash.Mix(h, tongueDelayLeft);
+        h = StateHash.Mix(h, skidRecoverTimeLeft);
+        h = StateHash.Mix(h, jumpCooldownLeft);
+        h = StateHash.Mix(h, jumpGraceTimeLeft);
+        h = StateHash.Mix(h, gravityGraceTimeLeft);
+        h = StateHash.Mix(h, bounceGravityRestoreCounter);
+        h = StateHash.Mix(h, canBounceDodge);
+        h = StateHash.Mix(h, hasBounceDodged);
+        h = StateHash.Mix(h, canBounceTongue);
+        h = StateHash.Mix(h, hasBounceTongued);
+        h = StateHash.Mix(h, hasReachedApex);
+        h = StateHash.Mix(h, wasHitDownwards);
+        h = StateHash.Mix(h, wasBouncingBeforeTongue);
+        h = StateHash.Mix(h, WallSliding);
+        h = StateHash.Mix(h, IngestedFly);
+        h = StateHash.Mix(h, ingestingFly != null);
+        return h;
     }
 
     /// <summary>Advances this character by one fixed simulation step.</summary>
@@ -394,8 +428,13 @@ public class Character : MonoBehaviour, ISimTickable
             if (IngestedFly)
             {
                 ingestingFly.Release();
+                GameController.ClearActiveFly(ingestingFly);
+                ingestingFly.gameObject.SetActive(false);
                 Destroy(ingestingFly.gameObject);
             }
+            if (player != null)
+                player.character = null;
+            gameObject.SetActive(false);
             Destroy(gameObject);
         }
     }

@@ -89,6 +89,11 @@ public class GameController : MonoBehaviour, ISimTickable
         }
         playerScoreDisplays = new List<PlayerScoreDisplay>();
         instance = this;
+        if (!DeterminismHarness.Active)
+        {
+            DeterministicRng.Match.Reseed(
+                (ulong)System.Environment.TickCount);
+        }
         if (inactivePlayers == null)
         {
             inactivePlayers = new List<Player>();
@@ -107,7 +112,7 @@ public class GameController : MonoBehaviour, ISimTickable
             inactivePlayers.Add(p);
 
         }
-        else
+        if (!isJoinScreen)
         {
             int i = 0;
             if (isTeamMode)
@@ -245,7 +250,7 @@ public class GameController : MonoBehaviour, ISimTickable
             }
             else
             {
-                flySpawnDelay = Random.Range(15f, 45f);
+                flySpawnDelay = DeterministicRng.Match.Range(15f, 45f);
             }
         }
 
@@ -260,6 +265,40 @@ public class GameController : MonoBehaviour, ISimTickable
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Clears the active fly reference the moment a fly dies, so the
+    /// respawn timer starts at a tick-deterministic point instead of
+    /// waiting for Unity's deferred Destroy.
+    /// </summary>
+    public static void ClearActiveFly(Fly fly)
+    {
+        if (instance != null && instance.activeFly == fly)
+            instance.activeFly = null;
+    }
+
+    /// <summary>Mixes the whole match sim state into a hash.</summary>
+    public static uint HashSimState(uint h)
+    {
+        if (instance == null)
+            return h;
+        h = StateHash.Mix(h, (int)instance.state);
+        h = StateHash.Mix(h, instance.flySpawnDelay);
+        h = StateHash.Mix(h, instance.finishDelay);
+        h = StateHash.Mix(h, instance.activeFly != null);
+        if (instance.activeFly != null)
+            h = instance.activeFly.HashSimState(h);
+        for (int i = 0; i < activePlayers.Count; i++)
+        {
+            var p = activePlayers[i];
+            h = StateHash.Mix(h, p.score);
+            h = StateHash.Mix(h, p.spawnDelay);
+            h = StateHash.Mix(h, p.character != null);
+            if (p.character != null)
+                h = p.character.HashSimState(h);
+        }
+        return h;
     }
 
     void TickRoundFinished(float dt)
@@ -366,7 +405,7 @@ public class GameController : MonoBehaviour, ISimTickable
 
             ArrangeScoreboards();
 
-            if (!isShowDown)
+            if (!isShowDown && playersCanDropIn)
             {
                 for (int i = inactivePlayers.Count - 1; i >= 0; i--)
                 {
@@ -657,7 +696,9 @@ public class GameController : MonoBehaviour, ISimTickable
                 SoundController.PlaySoundEffect("VictorySting", 0.5f);
                 SoundController.StopMusic();
                 instance.state = GameState.RoundFinished;
-                instance.GetPlayerScoreDisplay(gotPoint).TemorarilyDisplay("WINNER ! ! !", 5f);
+                var winnerDisplay = instance.GetPlayerScoreDisplay(gotPoint);
+                if (winnerDisplay != null)
+                    winnerDisplay.TemorarilyDisplay("WINNER ! ! !", 5f);
                 if (gotPoint.character != null)
                     gotPoint.character.GetComponent<ScorePlum>().ShowText("WIN!", 5f);
                 instance.winningPlayer = gotPoint;
@@ -665,7 +706,9 @@ public class GameController : MonoBehaviour, ISimTickable
             }
             else
             {
-                instance.GetPlayerScoreDisplay(gotPoint).TemorarilyDisplay("+" + hits.ToString());
+                var display = instance.GetPlayerScoreDisplay(gotPoint);
+                if (display != null)
+                    display.TemorarilyDisplay("+" + hits.ToString());
                 if (gotPoint.character != null)
                     gotPoint.character.GetComponent<ScorePlum>().ShowText("+" + hits.ToString());
             }

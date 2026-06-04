@@ -20,11 +20,22 @@ public class Fly : MonoBehaviour, ISimTickable
 
     float updateDirectionDelay;
 
-    // Use this for initialization
-    void Start()
+    void Awake()
     {
         terrainLayer = 1 << LayerMask.NameToLayer("Ground");
-        velocity = Random.insideUnitCircle.normalized * 10f;
+        velocity = DeterministicRng.Match.UnitCircle() * 10f;
+    }
+
+    /// <summary>Mixes this fly's mutable sim state into a hash.</summary>
+    public uint HashSimState(uint h)
+    {
+        h = StateHash.Mix(h, (Vector2)transform.position);
+        h = StateHash.Mix(h, velocity);
+        h = StateHash.Mix(h, targetVelocity);
+        h = StateHash.Mix(h, BeingIngested);
+        h = StateHash.Mix(h, ingestTimeout);
+        h = StateHash.Mix(h, updateDirectionDelay);
+        return h;
     }
 
     /// <summary>Flies tick after every character.</summary>
@@ -66,7 +77,7 @@ public class Fly : MonoBehaviour, ISimTickable
         updateDirectionDelay -= dt;
         if (updateDirectionDelay < 0f)
         {
-            updateDirectionDelay = Random.Range(3f, 10f);
+            updateDirectionDelay = DeterministicRng.Match.Range(3f, 10f);
             UpdateDirection();
         }
 
@@ -87,7 +98,11 @@ public class Fly : MonoBehaviour, ISimTickable
             RunMotion(dt);
 
         if (transform.position.x < Terrain.LeftKillPoint || transform.position.x > Terrain.RightKillPoint || transform.position.y > Terrain.TopKillPoint || transform.position.y < Terrain.BotKillPoint)
+        {
+            GameController.ClearActiveFly(this);
+            gameObject.SetActive(false);
             Destroy(gameObject);
+        }
     }
 
     void RunMotion(float dt)
@@ -142,12 +157,12 @@ public class Fly : MonoBehaviour, ISimTickable
 
     private void UpdateDirection()
     {
-        if (Random.value < 0.1f)
+        if (DeterministicRng.Match.Value < 0.1f)
         {
             targetVelocity = Vector2.zero;
-            updateDirectionDelay = Random.Range(1f, 3f);
+            updateDirectionDelay = DeterministicRng.Match.Range(1f, 3f);
         }
         else
-            targetVelocity = Random.insideUnitCircle.normalized * maxSpeed;
+            targetVelocity = DeterministicRng.Match.UnitCircle() * maxSpeed;
     }
 }
