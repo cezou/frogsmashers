@@ -23,7 +23,48 @@ public class Fly : MonoBehaviour, ISimTickable
     void Awake()
     {
         terrainLayer = 1 << LayerMask.NameToLayer("Ground");
+    }
+
+    /// <summary>Initializes mutable state at (re)spawn time.</summary>
+    public void SpawnInit()
+    {
         velocity = DeterministicRng.Match.UnitCircle() * 10f;
+        targetVelocity = Vector2.zero;
+        updateDirectionDelay = 0f;
+        BeingIngested = false;
+        ingestedBy = null;
+        ingestTimeout = 0f;
+    }
+
+    /// <summary>Captures every mutable sim field into a snapshot.</summary>
+    public void SaveTo(ref FlySnapshot s)
+    {
+        s.Active = gameObject.activeSelf;
+        s.Position = transform.position;
+        s.Velocity = velocity;
+        s.TargetVelocity = targetVelocity;
+        s.BeingIngested = BeingIngested;
+        s.IngestedByPlayerIndex = ingestedBy != null
+            && ingestedBy.player != null
+            ? GameController.activePlayers.IndexOf(ingestedBy.player) : -1;
+        s.IngestTimeout = ingestTimeout;
+        s.UpdateDirectionDelay = updateDirectionDelay;
+    }
+
+    /// <summary>Restores every mutable sim field from a snapshot.</summary>
+    public void RestoreFrom(in FlySnapshot s)
+    {
+        gameObject.SetActive(s.Active);
+        transform.position = s.Position;
+        velocity = s.Velocity;
+        targetVelocity = s.TargetVelocity;
+        BeingIngested = s.BeingIngested;
+        ingestedBy = s.IngestedByPlayerIndex >= 0
+            && s.IngestedByPlayerIndex < GameController.activePlayers.Count
+            ? GameController.activePlayers[s.IngestedByPlayerIndex].character
+            : null;
+        ingestTimeout = s.IngestTimeout;
+        updateDirectionDelay = s.UpdateDirectionDelay;
     }
 
     /// <summary>Mixes this fly's mutable sim state into a hash.</summary>
@@ -98,11 +139,7 @@ public class Fly : MonoBehaviour, ISimTickable
             RunMotion(dt);
 
         if (transform.position.x < Terrain.LeftKillPoint || transform.position.x > Terrain.RightKillPoint || transform.position.y > Terrain.TopKillPoint || transform.position.y < Terrain.BotKillPoint)
-        {
-            GameController.ClearActiveFly(this);
-            gameObject.SetActive(false);
-            Destroy(gameObject);
-        }
+            GameController.PoolFly(this);
     }
 
     void RunMotion(float dt)

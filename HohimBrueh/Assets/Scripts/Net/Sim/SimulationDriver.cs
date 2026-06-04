@@ -105,6 +105,7 @@ namespace FrogSmashers.Net.Sim
 
         static void Step()
         {
+            Physics2D.SyncTransforms();
             SimClock.Advance();
             SortIfDirty();
             scratch.Clear();
@@ -121,6 +122,8 @@ namespace FrogSmashers.Net.Sim
             if (!dirty)
                 return;
             dirty = false;
+            for (int i = 0; i < tickables.Count; i++)
+                tickables[i].Order = tickables[i].Tickable.SimOrder;
             tickables.Sort(CompareEntries);
         }
 

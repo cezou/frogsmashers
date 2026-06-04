@@ -247,10 +247,19 @@ public class Character : MonoBehaviour, ISimTickable
         flyLayer = 1 << LayerMask.NameToLayer("Fly");
     }
 
-    /// <summary>Characters tick after GameController, before flies.</summary>
+    /// <summary>
+    /// Characters tick after GameController, before flies, ordered by
+    /// player slot so the tick order survives pooling and rollback.
+    /// </summary>
     public int SimOrder
     {
-        get { return 100; }
+        get
+        {
+            int idx = player != null
+                ? GameController.activePlayers.IndexOf(player)
+                : -1;
+            return 100 + (idx < 0 ? 9 : idx);
+        }
     }
 
     void OnEnable()
@@ -292,6 +301,156 @@ public class Character : MonoBehaviour, ISimTickable
             return player == GameController.GetWinningPlayer();
         }
         return false;
+    }
+
+    /// <summary>Captures every mutable sim field into a snapshot.</summary>
+    public void SaveTo(ref CharacterSnapshot s)
+    {
+        s.Position = transform.position;
+        s.Velocity = velocity;
+        s.VelocityT = velocityT;
+        s.AttackDir = attackDir;
+        s.TongueDir = tongueDir;
+        s.State = (int)state;
+        s.AttackState = (int)attackState;
+        s.TongueState = (int)tongueState;
+        s.WallSlideSide = (int)WallSlideSide;
+        s.HitsTaken = hitsTaken;
+        s.FacingDir = facingDir;
+        s.LastHitByPlayerIndex = lastHitByPlayer != null
+            ? GameController.activePlayers.IndexOf(lastHitByPlayer) : -1;
+        s.OnGround = onGround;
+        s.WallSliding = WallSliding;
+        s.TimeSinceHit = timeSinceHit;
+        s.TimeBumpTimeLeft = timeBumpTimeLeft;
+        s.TimeBumpTimeScale = timeBumpTimeScale;
+        s.AttackChargeCounter = attackChargeCounter;
+        s.AttackTimeLeft = attackTimeLeft;
+        s.AttackRecoverTimeLeft = attackRecoverTimeLeft;
+        s.TongueDistance = tongueDistance;
+        s.TongueDelayLeft = tongueDelayLeft;
+        s.SkidRecoverTimeLeft = skidRecoverTimeLeft;
+        s.JumpCooldownLeft = jumpCooldownLeft;
+        s.JumpGraceTimeLeft = jumpGraceTimeLeft;
+        s.GravityGraceTimeLeft = gravityGraceTimeLeft;
+        s.BounceGravityRestoreCounter = bounceGravityRestoreCounter;
+        s.CanBounceDodge = canBounceDodge;
+        s.HasBounceDodged = hasBounceDodged;
+        s.CanBounceTongue = canBounceTongue;
+        s.HasBounceTongued = hasBounceTongued;
+        s.HasReachedApex = hasReachedApex;
+        s.WasHitDownwards = wasHitDownwards;
+        s.WasBouncingBeforeTongue = wasBouncingBeforeTongue;
+        s.IngestedFly = IngestedFly;
+        s.HasIngestingFly = ingestingFly != null;
+        SaveInput(ref s.Input);
+    }
+
+    /// <summary>Restores every mutable sim field from a snapshot.</summary>
+    public void RestoreFrom(in CharacterSnapshot s)
+    {
+        transform.position = s.Position;
+        velocity = s.Velocity;
+        velocityT = s.VelocityT;
+        attackDir = s.AttackDir;
+        tongueDir = s.TongueDir;
+        state = (CharacterState)s.State;
+        attackState = (AttackState)s.AttackState;
+        tongueState = (TongueState)s.TongueState;
+        WallSlideSide = (EffectsController.Side)s.WallSlideSide;
+        hitsTaken = s.HitsTaken;
+        facingDir = s.FacingDir;
+        lastHitByPlayer = s.LastHitByPlayerIndex >= 0
+            && s.LastHitByPlayerIndex < GameController.activePlayers.Count
+            ? GameController.activePlayers[s.LastHitByPlayerIndex] : null;
+        onGround = s.OnGround;
+        WallSliding = s.WallSliding;
+        timeSinceHit = s.TimeSinceHit;
+        timeBumpTimeLeft = s.TimeBumpTimeLeft;
+        timeBumpTimeScale = s.TimeBumpTimeScale;
+        attackChargeCounter = s.AttackChargeCounter;
+        attackTimeLeft = s.AttackTimeLeft;
+        attackRecoverTimeLeft = s.AttackRecoverTimeLeft;
+        tongueDistance = s.TongueDistance;
+        tongueDelayLeft = s.TongueDelayLeft;
+        skidRecoverTimeLeft = s.SkidRecoverTimeLeft;
+        jumpCooldownLeft = s.JumpCooldownLeft;
+        jumpGraceTimeLeft = s.JumpGraceTimeLeft;
+        gravityGraceTimeLeft = s.GravityGraceTimeLeft;
+        bounceGravityRestoreCounter = s.BounceGravityRestoreCounter;
+        canBounceDodge = s.CanBounceDodge;
+        hasBounceDodged = s.HasBounceDodged;
+        canBounceTongue = s.CanBounceTongue;
+        hasBounceTongued = s.HasBounceTongued;
+        hasReachedApex = s.HasReachedApex;
+        wasHitDownwards = s.WasHitDownwards;
+        wasBouncingBeforeTongue = s.WasBouncingBeforeTongue;
+        IngestedFly = s.IngestedFly;
+        ingestingFly = s.HasIngestingFly
+            ? GameController.ActiveFlyInstance : null;
+        RestoreInput(in s.Input);
+    }
+
+    /// <summary>Resets all mutable fields to fresh-spawn values.</summary>
+    public void ResetForSpawn(Vector3 spawnPoint)
+    {
+        var fresh = default(CharacterSnapshot);
+        fresh.Position = spawnPoint;
+        fresh.FacingDir = 1;
+        fresh.LastHitByPlayerIndex = -1;
+        RestoreFrom(in fresh);
+    }
+
+    void SaveInput(ref InputSnapshot s)
+    {
+        s.XAxis = input.xAxis;
+        s.YAxis = input.yAxis;
+        s.LeftTrigger = input.leftTrigger;
+        s.RightTrigger = input.rightTrigger;
+        s.A = input.aButton;
+        s.B = input.bButton;
+        s.X = input.xButton;
+        s.Y = input.yButton;
+        s.Up = input.up;
+        s.Down = input.down;
+        s.Left = input.left;
+        s.Right = input.right;
+        s.Start = input.start;
+        s.WasA = input.wasAButton;
+        s.WasB = input.wasBButton;
+        s.WasX = input.wasXButton;
+        s.WasY = input.wasYButton;
+        s.WasUp = input.wasUp;
+        s.WasDown = input.wasDown;
+        s.WasLeft = input.wasLeft;
+        s.WasRight = input.wasRight;
+        s.WasStart = input.wasStart;
+    }
+
+    void RestoreInput(in InputSnapshot s)
+    {
+        input.xAxis = s.XAxis;
+        input.yAxis = s.YAxis;
+        input.leftTrigger = s.LeftTrigger;
+        input.rightTrigger = s.RightTrigger;
+        input.aButton = s.A;
+        input.bButton = s.B;
+        input.xButton = s.X;
+        input.yButton = s.Y;
+        input.up = s.Up;
+        input.down = s.Down;
+        input.left = s.Left;
+        input.right = s.Right;
+        input.start = s.Start;
+        input.wasAButton = s.WasA;
+        input.wasBButton = s.WasB;
+        input.wasXButton = s.WasX;
+        input.wasYButton = s.WasY;
+        input.wasUp = s.WasUp;
+        input.wasDown = s.WasDown;
+        input.wasLeft = s.WasLeft;
+        input.wasRight = s.WasRight;
+        input.wasStart = s.WasStart;
     }
 
     /// <summary>Mixes this character's mutable sim state into a hash.</summary>
@@ -428,14 +587,19 @@ public class Character : MonoBehaviour, ISimTickable
             if (IngestedFly)
             {
                 ingestingFly.Release();
-                GameController.ClearActiveFly(ingestingFly);
-                ingestingFly.gameObject.SetActive(false);
-                Destroy(ingestingFly.gameObject);
+                GameController.PoolFly(ingestingFly);
             }
             if (player != null)
+            {
                 player.character = null;
-            gameObject.SetActive(false);
-            Destroy(gameObject);
+                player.pooledCharacter = this;
+                gameObject.SetActive(false);
+            }
+            else
+            {
+                gameObject.SetActive(false);
+                Destroy(gameObject);
+            }
         }
     }
 

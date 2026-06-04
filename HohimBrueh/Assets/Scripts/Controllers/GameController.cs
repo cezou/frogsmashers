@@ -246,7 +246,7 @@ public class GameController : MonoBehaviour, ISimTickable
             {
                 flySpawnDelay -= dt;
                 if (flySpawnDelay <= 0f)
-                    activeFly = Instantiate(flyPrefab, Terrain.GetFlySpawnPoint(), Quaternion.identity);
+                    activeFly = SpawnFly(Terrain.GetFlySpawnPoint());
             }
             else
             {
@@ -267,15 +267,151 @@ public class GameController : MonoBehaviour, ISimTickable
         }
     }
 
-    /// <summary>
-    /// Clears the active fly reference the moment a fly dies, so the
-    /// respawn timer starts at a tick-deterministic point instead of
-    /// waiting for Unity's deferred Destroy.
-    /// </summary>
-    public static void ClearActiveFly(Fly fly)
+    Fly pooledFly;
+
+    /// <summary>Current fly instance (may be inactive while eaten).</summary>
+    public static Fly ActiveFlyInstance
     {
-        if (instance != null && instance.activeFly == fly)
+        get { return instance != null ? instance.activeFly : null; }
+    }
+
+    /// <summary>
+    /// Retires a dead fly into the pool at the killing tick, so the
+    /// respawn timer starts at a tick-deterministic point instead of
+    /// waiting for Unity's deferred Destroy, and rollback can revive it.
+    /// </summary>
+    public static void PoolFly(Fly fly)
+    {
+        if (instance == null || fly == null)
+            return;
+        if (instance.activeFly == fly)
             instance.activeFly = null;
+        fly.gameObject.SetActive(false);
+        if (instance.pooledFly == null)
+            instance.pooledFly = fly;
+        else if (instance.pooledFly != fly)
+            Destroy(fly.gameObject);
+    }
+
+    Fly SpawnFly(Vector3 point)
+    {
+        Fly fly;
+        if (pooledFly != null)
+        {
+            fly = pooledFly;
+            pooledFly = null;
+            fly.transform.position = point;
+            fly.gameObject.SetActive(true);
+        }
+        else
+        {
+            fly = Instantiate(flyPrefab, point, Quaternion.identity);
+        }
+        fly.SpawnInit();
+        return fly;
+    }
+
+    /// <summary>Captures the complete sim state into a snapshot.</summary>
+    public static void SaveTo(MatchSnapshot snap)
+    {
+        snap.Tick = SimClock.CurrentTick;
+        snap.RngState = DeterministicRng.Match.State;
+        snap.GameState = (int)instance.state;
+        snap.FlySpawnDelay = instance.flySpawnDelay;
+        snap.FinishDelay = instance.finishDelay;
+        snap.WinningPlayerIndex = instance.winningPlayer != null
+            ? activePlayers.IndexOf(instance.winningPlayer) : -1;
+        snap.RedTeamScore = instance.redTeamScore;
+        snap.BlueTeamScore = instance.blueTeamScore;
+        snap.HasFly = instance.activeFly != null;
+        if (snap.HasFly)
+            instance.activeFly.SaveTo(ref snap.Fly);
+        snap.PlayerCount = Mathf.Min(
+            activePlayers.Count, MatchSnapshot.MaxPlayers);
+        for (int i = 0; i < snap.PlayerCount; i++)
+        {
+            var p = activePlayers[i];
+            snap.Players[i].Score = p.score;
+            snap.Players[i].RoundWins = p.roundWins;
+            snap.Players[i].SpawnDelay = p.spawnDelay;
+            snap.Players[i].HasCharacter = p.character != null;
+            if (p.character != null)
+                p.character.SaveTo(ref snap.Players[i].Character);
+        }
+    }
+
+    /// <summary>
+    /// Restores the complete sim state from a snapshot. Two passes:
+    /// first ensure fly and character instances exist (reviving pooled
+    /// ones), then restore fields so cross-references resolve.
+    /// </summary>
+    public static bool RestoreFrom(MatchSnapshot snap)
+    {
+        if (instance == null || !snap.Valid
+            || snap.PlayerCount != Mathf.Min(
+                activePlayers.Count, MatchSnapshot.MaxPlayers))
+        {
+            Debug.LogError("[GameController] Snapshot restore refused");
+            return false;
+        }
+
+        if (snap.HasFly && instance.activeFly == null)
+        {
+            instance.activeFly = instance.pooledFly != null
+                ? instance.pooledFly
+                : Instantiate(instance.flyPrefab);
+            instance.pooledFly = null;
+            instance.activeFly.gameObject.SetActive(true);
+        }
+        else if (!snap.HasFly && instance.activeFly != null)
+        {
+            PoolFly(instance.activeFly);
+        }
+
+        for (int i = 0; i < snap.PlayerCount; i++)
+        {
+            var p = activePlayers[i];
+            if (snap.Players[i].HasCharacter && p.character == null)
+            {
+                var ch = p.pooledCharacter != null
+                    ? p.pooledCharacter
+                    : Instantiate(instance.characterPrefab);
+                p.pooledCharacter = null;
+                ch.player = p;
+                ch.gameObject.SetActive(true);
+                p.character = ch;
+            }
+            else if (!snap.Players[i].HasCharacter && p.character != null)
+            {
+                p.pooledCharacter = p.character;
+                p.character.gameObject.SetActive(false);
+                p.character = null;
+            }
+        }
+
+        instance.state = (GameState)snap.GameState;
+        instance.flySpawnDelay = snap.FlySpawnDelay;
+        instance.finishDelay = snap.FinishDelay;
+        instance.winningPlayer = snap.WinningPlayerIndex >= 0
+            && snap.WinningPlayerIndex < activePlayers.Count
+            ? activePlayers[snap.WinningPlayerIndex] : null;
+        instance.redTeamScore = snap.RedTeamScore;
+        instance.blueTeamScore = snap.BlueTeamScore;
+        if (snap.HasFly)
+            instance.activeFly.RestoreFrom(in snap.Fly);
+        for (int i = 0; i < snap.PlayerCount; i++)
+        {
+            var p = activePlayers[i];
+            p.score = snap.Players[i].Score;
+            p.roundWins = snap.Players[i].RoundWins;
+            p.spawnDelay = snap.Players[i].SpawnDelay;
+            if (p.character != null)
+                p.character.RestoreFrom(in snap.Players[i].Character);
+        }
+        DeterministicRng.Match.State = snap.RngState;
+        SimClock.SetTick(snap.Tick);
+        Physics2D.SyncTransforms();
+        return true;
     }
 
     /// <summary>Mixes the whole match sim state into a hash.</summary>
@@ -554,7 +690,18 @@ public class GameController : MonoBehaviour, ISimTickable
     void SpawnCharacter(Player player)
     {
         var point = Terrain.GetSpawnPoint();
-        var ch = Instantiate(characterPrefab, point, Quaternion.identity) as Character;
+        Character ch;
+        if (player != null && player.pooledCharacter != null)
+        {
+            ch = player.pooledCharacter;
+            player.pooledCharacter = null;
+            ch.ResetForSpawn(point);
+            ch.gameObject.SetActive(true);
+        }
+        else
+        {
+            ch = Instantiate(characterPrefab, point, Quaternion.identity) as Character;
+        }
         if (player != null)
         {
             ch.player = player;
