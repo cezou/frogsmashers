@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using FreeLives;
+using FrogSmashers.Net.Sim;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
@@ -14,7 +15,7 @@ public enum GameState
 }
 
 
-public class GameController : MonoBehaviour
+public class GameController : MonoBehaviour, ISimTickable
 {
     public static bool charactersBounceEachOther = false;
     public static bool weirdBounceTrajectories = false;
@@ -88,6 +89,11 @@ public class GameController : MonoBehaviour
         }
         playerScoreDisplays = new List<PlayerScoreDisplay>();
         instance = this;
+        if (!DeterminismHarness.Active)
+        {
+            DeterministicRng.Match.Reseed(
+                (ulong)System.Environment.TickCount);
+        }
         if (inactivePlayers == null)
         {
             inactivePlayers = new List<Player>();
@@ -106,7 +112,7 @@ public class GameController : MonoBehaviour
             inactivePlayers.Add(p);
 
         }
-        else
+        if (!isJoinScreen)
         {
             int i = 0;
             if (isTeamMode)
@@ -206,6 +212,114 @@ public class GameController : MonoBehaviour
 
     FreeLives.InputState input = new InputState();
     FreeLives.InputState combinedInput = new InputState();
+
+    /// <summary>Match flow ticks before characters and flies.</summary>
+    public int SimOrder
+    {
+        get { return 0; }
+    }
+
+    void OnEnable()
+    {
+        SimulationDriver.Register(this);
+    }
+
+    void OnDisable()
+    {
+        SimulationDriver.Unregister(this);
+    }
+
+    /// <summary>Advances match-flow state by one fixed simulation step.</summary>
+    public void SimTick(float dt)
+    {
+        if (state == GameState.Playing)
+            TickPlaying(dt);
+        else if (state == GameState.RoundFinished)
+            TickRoundFinished(dt);
+    }
+
+    void TickPlaying(float dt)
+    {
+        if (activeFly == null && !isShowDown)
+        {
+            if (flySpawnDelay > 0f)
+            {
+                flySpawnDelay -= dt;
+                if (flySpawnDelay <= 0f)
+                    activeFly = Instantiate(flyPrefab, Terrain.GetFlySpawnPoint(), Quaternion.identity);
+            }
+            else
+            {
+                flySpawnDelay = DeterministicRng.Match.Range(15f, 45f);
+            }
+        }
+
+        for (int i = 0; i < activePlayers.Count; i++)
+        {
+            if (activePlayers[i].character == null)
+            {
+                activePlayers[i].spawnDelay -= dt;
+                if (activePlayers[i].spawnDelay < 0f)
+                {
+                    SpawnCharacter(activePlayers[i]);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Clears the active fly reference the moment a fly dies, so the
+    /// respawn timer starts at a tick-deterministic point instead of
+    /// waiting for Unity's deferred Destroy.
+    /// </summary>
+    public static void ClearActiveFly(Fly fly)
+    {
+        if (instance != null && instance.activeFly == fly)
+            instance.activeFly = null;
+    }
+
+    /// <summary>Mixes the whole match sim state into a hash.</summary>
+    public static uint HashSimState(uint h)
+    {
+        if (instance == null)
+            return h;
+        h = StateHash.Mix(h, (int)instance.state);
+        h = StateHash.Mix(h, instance.flySpawnDelay);
+        h = StateHash.Mix(h, instance.finishDelay);
+        h = StateHash.Mix(h, instance.activeFly != null);
+        if (instance.activeFly != null)
+            h = instance.activeFly.HashSimState(h);
+        for (int i = 0; i < activePlayers.Count; i++)
+        {
+            var p = activePlayers[i];
+            h = StateHash.Mix(h, p.score);
+            h = StateHash.Mix(h, p.spawnDelay);
+            h = StateHash.Mix(h, p.character != null);
+            if (p.character != null)
+                h = p.character.HashSimState(h);
+        }
+        return h;
+    }
+
+    void TickRoundFinished(float dt)
+    {
+        for (int i = 0; i < activePlayers.Count; i++)
+        {
+            if (activePlayers[i].character == null && winningPlayer == activePlayers[i])
+            {
+                activePlayers[i].spawnDelay -= dt;
+                if (activePlayers[i].spawnDelay < 0f)
+                {
+                    SpawnCharacter(activePlayers[i]);
+                }
+            }
+        }
+
+        finishDelay -= dt;
+        if (finishDelay < 0f)
+            FinishRound();
+    }
+
     void Update()
     {
         bool backToMenu =
@@ -258,34 +372,8 @@ public class GameController : MonoBehaviour
         }
         else if (state == GameState.Playing)
         {
-            if (activeFly == null && !isShowDown)
-            {
-                if (flySpawnDelay > 0f)
-                {
-                    flySpawnDelay -= Time.deltaTime;
-                    if (flySpawnDelay <= 0f)
-                        activeFly = Instantiate(flyPrefab, Terrain.GetFlySpawnPoint(), Quaternion.identity);
-                }
-                else
-                {
-                    flySpawnDelay = Random.Range(15f, 45f);
-                }
-
-
-            }
-
-
             for (int i = 0; i < activePlayers.Count; i++)
             {
-                if (activePlayers[i].character == null)
-                {
-                    activePlayers[i].spawnDelay -= Time.deltaTime;
-                    if (activePlayers[i].spawnDelay < 0f)
-                    {
-                        SpawnCharacter(activePlayers[i]);
-                    }
-                }
-
                 if (activePlayers[i].character != null && activePlayers[i].character.transform.position.y > Terrain.ScreenTop)
                 {
 
@@ -317,7 +405,7 @@ public class GameController : MonoBehaviour
 
             ArrangeScoreboards();
 
-            if (!isShowDown)
+            if (!isShowDown && playersCanDropIn)
             {
                 for (int i = inactivePlayers.Count - 1; i >= 0; i--)
                 {
@@ -344,23 +432,6 @@ public class GameController : MonoBehaviour
         else if (state == GameState.RoundFinished)
         {
             ArrangeScoreboards();
-
-            for (int i = 0; i < activePlayers.Count; i++)
-            {
-                if (activePlayers[i].character == null && winningPlayer == activePlayers[i])
-                {
-                    activePlayers[i].spawnDelay -= Time.deltaTime;
-                    if (activePlayers[i].spawnDelay < 0f)
-                    {
-                        SpawnCharacter(activePlayers[i]);
-                    }
-                }
-            }
-
-
-            finishDelay -= Time.deltaTime;
-            if (finishDelay < 0f)
-                FinishRound();
         }
 
         if (Keyboard.current != null && Keyboard.current.f6Key.wasPressedThisFrame)
@@ -625,7 +696,9 @@ public class GameController : MonoBehaviour
                 SoundController.PlaySoundEffect("VictorySting", 0.5f);
                 SoundController.StopMusic();
                 instance.state = GameState.RoundFinished;
-                instance.GetPlayerScoreDisplay(gotPoint).TemorarilyDisplay("WINNER ! ! !", 5f);
+                var winnerDisplay = instance.GetPlayerScoreDisplay(gotPoint);
+                if (winnerDisplay != null)
+                    winnerDisplay.TemorarilyDisplay("WINNER ! ! !", 5f);
                 if (gotPoint.character != null)
                     gotPoint.character.GetComponent<ScorePlum>().ShowText("WIN!", 5f);
                 instance.winningPlayer = gotPoint;
@@ -633,7 +706,9 @@ public class GameController : MonoBehaviour
             }
             else
             {
-                instance.GetPlayerScoreDisplay(gotPoint).TemorarilyDisplay("+" + hits.ToString());
+                var display = instance.GetPlayerScoreDisplay(gotPoint);
+                if (display != null)
+                    display.TemorarilyDisplay("+" + hits.ToString());
                 if (gotPoint.character != null)
                     gotPoint.character.GetComponent<ScorePlum>().ShowText("+" + hits.ToString());
             }

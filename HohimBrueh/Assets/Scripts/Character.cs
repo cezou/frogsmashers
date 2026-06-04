@@ -1,7 +1,8 @@
-﻿ using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using FreeLives;
+using FrogSmashers.Net.Sim;
 using System;
 
 public enum CharacterState
@@ -30,7 +31,7 @@ public enum TongueState
     HitFlyBurping
 }
 
-public class Character : MonoBehaviour
+public class Character : MonoBehaviour, ISimTickable
 {
     [HideInInspector]
     public InputState input = new InputState();
@@ -236,11 +237,6 @@ public class Character : MonoBehaviour
         }
     }
 
-    void Start()
-    {
-        CheckInput();
-    }
-
     // Use this for initialization
     void Awake()
     {
@@ -249,6 +245,22 @@ public class Character : MonoBehaviour
         characterLayer = 1 << LayerMask.NameToLayer("Character");
         tongueLayer = 1 << LayerMask.NameToLayer("Tongue");
         flyLayer = 1 << LayerMask.NameToLayer("Fly");
+    }
+
+    /// <summary>Characters tick after GameController, before flies.</summary>
+    public int SimOrder
+    {
+        get { return 100; }
+    }
+
+    void OnEnable()
+    {
+        SimulationDriver.Register(this);
+    }
+
+    void OnDisable()
+    {
+        SimulationDriver.Unregister(this);
     }
 
     void CheckInput()
@@ -282,19 +294,58 @@ public class Character : MonoBehaviour
         return false;
     }
 
-    // Update is called once per frame
-    void Update()
+    /// <summary>Mixes this character's mutable sim state into a hash.</summary>
+    public uint HashSimState(uint h)
+    {
+        h = StateHash.Mix(h, (Vector2)transform.position);
+        h = StateHash.Mix(h, velocity);
+        h = StateHash.Mix(h, (int)state);
+        h = StateHash.Mix(h, (int)attackState);
+        h = StateHash.Mix(h, (int)tongueState);
+        h = StateHash.Mix(h, hitsTaken);
+        h = StateHash.Mix(h, facingDir);
+        h = StateHash.Mix(h, onGround);
+        h = StateHash.Mix(h, timeSinceHit);
+        h = StateHash.Mix(h, timeBumpTimeLeft);
+        h = StateHash.Mix(h, timeBumpTimeScale);
+        h = StateHash.Mix(h, attackChargeCounter);
+        h = StateHash.Mix(h, attackTimeLeft);
+        h = StateHash.Mix(h, attackRecoverTimeLeft);
+        h = StateHash.Mix(h, attackDir);
+        h = StateHash.Mix(h, tongueDir);
+        h = StateHash.Mix(h, tongueDistance);
+        h = StateHash.Mix(h, tongueDelayLeft);
+        h = StateHash.Mix(h, skidRecoverTimeLeft);
+        h = StateHash.Mix(h, jumpCooldownLeft);
+        h = StateHash.Mix(h, jumpGraceTimeLeft);
+        h = StateHash.Mix(h, gravityGraceTimeLeft);
+        h = StateHash.Mix(h, bounceGravityRestoreCounter);
+        h = StateHash.Mix(h, canBounceDodge);
+        h = StateHash.Mix(h, hasBounceDodged);
+        h = StateHash.Mix(h, canBounceTongue);
+        h = StateHash.Mix(h, hasBounceTongued);
+        h = StateHash.Mix(h, hasReachedApex);
+        h = StateHash.Mix(h, wasHitDownwards);
+        h = StateHash.Mix(h, wasBouncingBeforeTongue);
+        h = StateHash.Mix(h, WallSliding);
+        h = StateHash.Mix(h, IngestedFly);
+        h = StateHash.Mix(h, ingestingFly != null);
+        return h;
+    }
+
+    /// <summary>Advances this character by one fixed simulation step.</summary>
+    public void SimTick(float dt)
     {
         CheckInput();
 
         if (TimeBumpActive)
         {
-            timeBumpTimeLeft -= Time.deltaTime;
-            t = Time.deltaTime * timeBumpTimeScale;
+            timeBumpTimeLeft -= dt;
+            t = dt * timeBumpTimeScale;
         }
         else
         {
-            t = Time.deltaTime;
+            t = dt;
         }
 
         if (state != CharacterState.Bouncing)
@@ -310,7 +361,8 @@ public class Character : MonoBehaviour
         else if (state == CharacterState.Tounge)
             RunTongue();
 
-        if (input.yButton && !input.wasYButton && Application.isEditor)
+#if UNITY_EDITOR
+        if (input.yButton && !input.wasYButton)
         {
             Vector2 dir = Vector2.zero;
             if (input.right)
@@ -323,12 +375,10 @@ public class Character : MonoBehaviour
                 dir -= Vector2.up;
 
             GetHit(dir, UnityEngine.Random.value, this);
-
         }
+#endif
 
         CheckDeath();
-
-
     }
 
     void CheckDeath()
@@ -378,8 +428,13 @@ public class Character : MonoBehaviour
             if (IngestedFly)
             {
                 ingestingFly.Release();
+                GameController.ClearActiveFly(ingestingFly);
+                ingestingFly.gameObject.SetActive(false);
                 Destroy(ingestingFly.gameObject);
             }
+            if (player != null)
+                player.character = null;
+            gameObject.SetActive(false);
             Destroy(gameObject);
         }
     }
