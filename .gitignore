@@ -68,3 +68,8 @@ sysinfo.txt
 # Crashlytics generated file
 crashlytics-build.properties
 
+# Local planning docs (contain confidential infra details, e.g. OCI IP)
+/AGENTS.md
+/PLANGLOBAL.md
+/PHASE*.md
+
