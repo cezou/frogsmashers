@@ -100,6 +100,22 @@ namespace FrogSmashers.Net.Rollback
             return predicted;
         }
 
+        /// <summary>
+        /// Reads a confirmed input without recording a prediction
+        /// (used to build redundant send windows).
+        /// </summary>
+        public bool TryGetConfirmed(int slot, uint tick, out ushort input)
+        {
+            ref var cell = ref cells[slot][tick % Capacity];
+            if (cell.Tick == tick && cell.Confirmed)
+            {
+                input = cell.Input;
+                return true;
+            }
+            input = 0;
+            return false;
+        }
+
         /// <summary>Resets all slots (new match).</summary>
         public void Clear()
         {
