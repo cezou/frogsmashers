@@ -95,7 +95,7 @@ namespace FrogSmashers.Net.Transport
         {
             if (File.Exists(CodeFile))
                 File.Delete(CodeFile);
-            var net = await NetSession.CreateAsync(4);
+            var net = await NetSession.CreateAsync(4, false);
             File.WriteAllText(CodeFile, net.JoinCode);
             Debug.Log($"[NetHello] code {net.JoinCode} written, waiting");
             var manager = NetworkManager.Singleton;

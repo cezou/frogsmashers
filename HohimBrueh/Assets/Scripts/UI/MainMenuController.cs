@@ -1,5 +1,9 @@
+using System.Collections.Generic;
+using FrogSmashers.Net;
+using FrogSmashers.Net.Transport;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -9,7 +13,6 @@ namespace FrogSmashers.UI
     {
         public Button localGameButton;
         public Button createLobbyButton;
-        public Button openLobbiesButton;
         public Button rankedQueueButton;
         public Button settingsButton;
 
@@ -17,11 +20,17 @@ namespace FrogSmashers.UI
         public Text comingSoonText;
         public Button comingSoonBackButton;
 
+        public Text lobbyListStatus;
+        public Button[] lobbyEntryButtons;
+        public Text statusText;
+
+        readonly List<LobbyEntry> entries = new List<LobbyEntry>();
         GameObject lastSelectedBeforePanel;
+        bool busy;
 
         Button[] MenuButtons => new[]
         {
-            localGameButton, createLobbyButton, openLobbiesButton,
+            localGameButton, createLobbyButton,
             rankedQueueButton, settingsButton
         };
 
@@ -29,16 +38,127 @@ namespace FrogSmashers.UI
         {
             if (comingSoonPanel != null)
                 comingSoonPanel.SetActive(false);
+            SetStatus("");
+
+            if (lobbyEntryButtons != null)
+            {
+                for (int i = 0; i < lobbyEntryButtons.Length; i++)
+                {
+                    int index = i;
+                    lobbyEntryButtons[i].onClick.AddListener(
+                        () => OnJoinEntry(index));
+                    lobbyEntryButtons[i].gameObject.SetActive(false);
+                }
+            }
 
             if (EventSystem.current != null && localGameButton != null)
                 EventSystem.current.SetSelectedGameObject(localGameButton.gameObject);
+
+            InvokeRepeating(nameof(RefreshLobbies), 0.5f, 4f);
+        }
+
+        void Update()
+        {
+            bool back =
+                (Keyboard.current != null
+                    && Keyboard.current.escapeKey.wasPressedThisFrame)
+                || (Gamepad.current != null
+                    && Gamepad.current.buttonEast.wasPressedThisFrame);
+            if (back && comingSoonPanel != null
+                && comingSoonPanel.activeSelf)
+            {
+                HideComingSoon();
+            }
         }
 
         public void OnLocalGame()    { SceneManager.LoadScene("JoinScreen"); }
-        public void OnCreateLobby()  { ShowComingSoon("Create Lobby"); }
-        public void OnOpenLobbies()  { ShowComingSoon("Open Lobbies"); }
         public void OnRankedQueue()  { ShowComingSoon("Ranked Queue"); }
         public void OnSettings()     { ShowComingSoon("Settings"); }
+
+        public async void OnCreateLobby()
+        {
+            if (busy)
+                return;
+            busy = true;
+            SetStatus("CREATING  LOBBY . . .");
+            try
+            {
+                await NetSession.CreateAsync(4, discoverable: true);
+                OnlineMatch.HostStartLobby();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[MainMenu] Create lobby failed: {e}");
+                SetStatus("ERROR :  COULD  NOT  CREATE  LOBBY");
+                busy = false;
+            }
+        }
+
+        async void OnJoinEntry(int index)
+        {
+            if (busy || index >= entries.Count)
+                return;
+            busy = true;
+            var entry = entries[index];
+            SetStatus($"JOINING  {entry.Name} . . .");
+            try
+            {
+                await NetSession.JoinByCodeAsync(entry.RelayCode);
+                OnlineMatch.JoinAsClient();
+                SetStatus("WAITING  FOR  THE  HOST . . .");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[MainMenu] Join failed: {e}");
+                SetStatus("ERROR :  COULD  NOT  JOIN");
+                busy = false;
+            }
+        }
+
+        async void RefreshLobbies()
+        {
+            if (busy)
+                return;
+            List<LobbyEntry> found;
+            try
+            {
+                found = await LobbyDiscovery.QueryAsync();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[MainMenu] Lobby query failed: {e}");
+                return;
+            }
+            if (this == null || busy)
+                return;
+            entries.Clear();
+            entries.AddRange(found);
+            for (int i = 0; i < lobbyEntryButtons.Length; i++)
+            {
+                bool used = i < entries.Count;
+                lobbyEntryButtons[i].gameObject.SetActive(used);
+                if (!used)
+                    continue;
+                var label = lobbyEntryButtons[i]
+                    .GetComponentInChildren<Text>();
+                if (label != null)
+                {
+                    label.text = $"{entries[i].Name}  "
+                        + $"{entries[i].Players}/{entries[i].MaxPlayers}";
+                }
+            }
+            if (lobbyListStatus != null)
+            {
+                lobbyListStatus.text = entries.Count == 0
+                    ? "NO  LOBBIES  YET" : "";
+            }
+        }
+
+        void SetStatus(string message)
+        {
+            if (statusText != null)
+                statusText.text = message;
+        }
 
         public void ShowComingSoon(string feature)
         {

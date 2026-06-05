@@ -77,10 +77,19 @@ namespace FrogSmashers.Net.Rollback
             }
         }
 
+        bool loggedFirstInput;
+
         public void SimTick(float dt)
         {
             if (SimulationDriver.IsResimulating)
                 return;
+            if (SimClock.CurrentTick == 1)
+            {
+                Debug.Log("[RollbackNetDriver] First tick: slot"
+                    + $" {localSlot}, host={isHost}, source="
+                    + InputReader.ActiveSource.GetType().Name
+                    + $", players={GameController.activePlayers.Count}");
+            }
             ushort packed;
             if (ScriptedLocal)
             {
@@ -90,13 +99,39 @@ namespace FrogSmashers.Net.Rollback
             }
             else
             {
-                poller.Read(InputReader.Device.Keyboard1, keyboard);
-                poller.Read(InputReader.Device.Gamepad1, gamepad);
-                packed = (ushort)(InputPacking.Pack(keyboard)
-                    | InputPacking.Pack(gamepad));
+                packed = PollLocalDevices();
+            }
+            if (packed != 0 && !loggedFirstInput)
+            {
+                loggedFirstInput = true;
+                Debug.Log("[RollbackNetDriver] First local input"
+                    + $" {packed:X4} at tick {SimClock.CurrentTick}");
             }
             rollback.Inputs.Confirm(
                 localSlot, SimClock.CurrentTick, packed);
+        }
+
+        /// <summary>
+        /// Merged local input for online play: both keyboard layouts
+        /// (arrows and WASD) and the last-used gamepad all drive the
+        /// local frog. An unfocused instance reports neutral input so
+        /// stale held keys never leak into the match.
+        /// </summary>
+        public ushort PollLocalDevices()
+        {
+            if (!Application.isFocused)
+                return 0;
+            poller.Read(InputReader.Device.Keyboard1, keyboard);
+            ushort packed = InputPacking.Pack(keyboard);
+            poller.Read(InputReader.Device.Keyboard2, keyboard);
+            packed |= InputPacking.Pack(keyboard);
+            var pad = UnityEngine.InputSystem.Gamepad.current;
+            if (pad != null)
+            {
+                LocalInputSource.ReadGamepad(pad, gamepad);
+                packed |= InputPacking.Pack(gamepad);
+            }
+            return packed;
         }
 
         void OnTickCompleted(uint tick)
@@ -104,9 +139,27 @@ namespace FrogSmashers.Net.Rollback
             if (SimulationDriver.IsResimulating)
                 return;
             if (isHost)
+            {
                 SendAllSlotsToClients();
+            }
             else
+            {
                 SendSlotTo(NetworkManager.ServerClientId, localSlot);
+                SyncPaceToHost(tick);
+            }
+        }
+
+        void SyncPaceToHost(uint tick)
+        {
+            uint hostConfirmed = rollback.Inputs.LastConfirmedTick(0);
+            if (hostConfirmed == 0)
+                return;
+            long lead = (long)hostConfirmed - tick;
+            if (lead > 3)
+                SimulationDriver.PaceBias = (int)System.Math.Min(
+                    lead - 2, 8);
+            else if (lead < -10)
+                SimulationDriver.PaceBias = -1;
         }
 
         void SendAllSlotsToClients()
@@ -154,6 +207,8 @@ namespace FrogSmashers.Net.Rollback
         void OnInputReceived(int slot, uint tick, ushort input)
         {
             if (slot == localSlot)
+                return;
+            if (tick > SimClock.CurrentTick + 300)
                 return;
             rollback.Inputs.Confirm(slot, tick, input);
         }

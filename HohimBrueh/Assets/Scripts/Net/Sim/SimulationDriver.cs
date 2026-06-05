@@ -29,6 +29,14 @@ namespace FrogSmashers.Net.Sim
         /// <summary>True while a rollback resimulation is running.</summary>
         public static bool IsResimulating { get; set; }
 
+        /// <summary>
+        /// One-shot pacing correction consumed next frame: positive
+        /// runs that many extra ticks (we lag the host), negative
+        /// swallows pending tick time (we run ahead). Set by the
+        /// online timesync.
+        /// </summary>
+        public static int PaceBias { get; set; }
+
         /// <summary>Fires before every live step (rollback checkpoint).</summary>
         public static event System.Action BeforeStep;
 
@@ -55,6 +63,7 @@ namespace FrogSmashers.Net.Sim
         {
             if (instance != null)
                 return;
+            Application.runInBackground = true;
             var host = new GameObject("SimulationDriver");
             DontDestroyOnLoad(host);
             instance = host.AddComponent<SimulationDriver>();
@@ -109,6 +118,21 @@ namespace FrogSmashers.Net.Sim
                 return;
             }
             accumulator += Time.deltaTime;
+            if (PaceBias > 0)
+            {
+                int extra = Mathf.Min(PaceBias, 8);
+                PaceBias = 0;
+                for (int i = 0; i < extra; i++)
+                {
+                    BeforeStep?.Invoke();
+                    Step();
+                }
+            }
+            else if (PaceBias < 0)
+            {
+                accumulator -= SimClock.TickDt;
+                PaceBias = 0;
+            }
             int steps = 0;
             while (accumulator >= SimClock.TickDt
                 && steps < maxTicksPerFrame)

@@ -22,17 +22,22 @@ namespace FrogSmashers.Net.Transport
     public class NetMatchHarness : MonoBehaviour, ISimTickable
     {
         const int matchTicks = 1800;
+        const int lobbyMatchTicks = 900;
+        const float lobbyBrawlSeconds = 8f;
         const ulong matchSeed = 0xF706C0DEUL;
-        const float watchdogSeconds = 240f;
+        const float watchdogSeconds = 300f;
         const uint corruptionTick = 700;
 
         static bool isHost;
         static bool injectDesync;
+        static bool lobbyMode;
         static NetMatchHarness instance;
 
         int desyncsBeforeCorrection;
         bool corrupted;
         bool finished;
+        bool readySent;
+        float lobbyReadyAt = -1f;
 
         static string CodeFile
         {
@@ -50,9 +55,12 @@ namespace FrogSmashers.Net.Transport
         {
             bool host = HasCliArg("-netMatchHost");
             bool join = HasCliArg("-netMatchJoin");
-            if (!host && !join)
+            bool lobbyHost = HasCliArg("-netLobbyHost");
+            bool lobbyJoin = HasCliArg("-netLobbyJoin");
+            if (!host && !join && !lobbyHost && !lobbyJoin)
                 return;
-            isHost = host;
+            isHost = host || lobbyHost;
+            lobbyMode = lobbyHost || lobbyJoin;
             injectDesync = HasCliArg("-injectDesync");
             var go = new GameObject("NetMatchHarness");
             DontDestroyOnLoad(go);
@@ -88,9 +96,15 @@ namespace FrogSmashers.Net.Transport
         {
             if (File.Exists(CodeFile))
                 File.Delete(CodeFile);
-            var net = await NetSession.CreateAsync(4);
+            var net = await NetSession.CreateAsync(4, false);
             OnlineMatch.Listen();
             File.WriteAllText(CodeFile, net.JoinCode);
+            if (lobbyMode)
+            {
+                SimulationDriver.Register(this);
+                OnlineMatch.HostStartLobby();
+                return;
+            }
             var manager = NetworkManager.Singleton;
             while (manager.ConnectedClientsIds.Count < 2)
                 await Task.Delay(250);
@@ -106,14 +120,41 @@ namespace FrogSmashers.Net.Transport
             string code = File.ReadAllText(CodeFile).Trim();
             await NetSession.JoinByCodeAsync(code);
             OnlineMatch.Listen();
+            if (lobbyMode)
+                OnlineMatch.JoinAsClient();
             SimulationDriver.Register(this);
             Debug.Log("[NetMatch] joined, waiting for match start");
+        }
+
+        void Update()
+        {
+            if (!lobbyMode || finished || readySent)
+                return;
+            if (!OnlineMatch.InLobby || OnlineMatch.PlayerCount < 2)
+                return;
+            if (lobbyReadyAt < 0f)
+            {
+                lobbyReadyAt = Time.time + lobbyBrawlSeconds;
+                Debug.Log("[NetMatch] lobby brawl started, ready in"
+                    + $" {lobbyBrawlSeconds}s");
+            }
+            else if (Time.time >= lobbyReadyAt)
+            {
+                readySent = true;
+                Debug.Log("[NetMatch] toggling ready");
+                OnlineMatch.ToggleLocalReady();
+            }
         }
 
         public void SimTick(float dt)
         {
             if (!OnlineMatch.Active || finished
                 || SimulationDriver.IsResimulating)
+            {
+                return;
+            }
+            if (lobbyMode
+                && OnlineMatch.CurrentPhase != OnlineMatch.Phase.Match)
             {
                 return;
             }
@@ -125,7 +166,7 @@ namespace FrogSmashers.Net.Transport
                 CorruptState();
             }
 
-            if (tick >= matchTicks)
+            if (tick >= (lobbyMode ? lobbyMatchTicks : matchTicks))
                 Finish();
         }
 
@@ -181,7 +222,7 @@ namespace FrogSmashers.Net.Transport
                     + $" {sync.ComparedCount} compared hashes");
                 Application.Quit(1);
             }
-            else if (sync.ComparedCount < 30)
+            else if (sync.ComparedCount < (lobbyMode ? 10 : 30))
             {
                 Debug.Log("[NetMatch] INCONCLUSIVE: only"
                     + $" {sync.ComparedCount} hashes compared");
