@@ -89,7 +89,7 @@ public class GameController : MonoBehaviour, ISimTickable
         }
         playerScoreDisplays = new List<PlayerScoreDisplay>();
         instance = this;
-        if (!DeterminismHarness.Active)
+        if (!DeterminismHarness.Active && !FrogSmashers.Net.OnlineMatch.Active)
         {
             DeterministicRng.Match.Reseed(
                 (ulong)System.Environment.TickCount);

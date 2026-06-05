@@ -67,14 +67,34 @@ namespace FrogSmashers.Net.Rollback
             Active = null;
         }
 
+        static bool ScriptedLocal
+        {
+            get
+            {
+                return System.Array.IndexOf(
+                    System.Environment.GetCommandLineArgs(),
+                    "-scriptedLocal") >= 0;
+            }
+        }
+
         public void SimTick(float dt)
         {
             if (SimulationDriver.IsResimulating)
                 return;
-            poller.Read(InputReader.Device.Keyboard1, keyboard);
-            poller.Read(InputReader.Device.Gamepad1, gamepad);
-            ushort packed = (ushort)(InputPacking.Pack(keyboard)
-                | InputPacking.Pack(gamepad));
+            ushort packed;
+            if (ScriptedLocal)
+            {
+                ScriptedInputSource.ReadForTick(SimClock.CurrentTick,
+                    InputReader.Device.Gamepad1 + localSlot, keyboard);
+                packed = InputPacking.Pack(keyboard);
+            }
+            else
+            {
+                poller.Read(InputReader.Device.Keyboard1, keyboard);
+                poller.Read(InputReader.Device.Gamepad1, gamepad);
+                packed = (ushort)(InputPacking.Pack(keyboard)
+                    | InputPacking.Pack(gamepad));
+            }
             rollback.Inputs.Confirm(
                 localSlot, SimClock.CurrentTick, packed);
         }

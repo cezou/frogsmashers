@@ -372,11 +372,7 @@ namespace FrogSmashers.Net.Sim
 
         uint ComputeHash()
         {
-            uint h = StateHash.Seed;
-            h = StateHash.Mix(h, SimClock.CurrentTick);
-            h = StateHash.Mix(h, DeterministicRng.Match.State);
-            h = GameController.HashSimState(h);
-            return h;
+            return MatchHasher.Compute();
         }
 
         void Compare()
