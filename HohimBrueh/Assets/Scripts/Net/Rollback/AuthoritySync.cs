@@ -98,17 +98,7 @@ namespace FrogSmashers.Net.Rollback
 
         uint SafeTick()
         {
-            var inputs = rollback.Inputs;
-            uint safe = uint.MaxValue;
-            for (int s = 0; s < OnlineMatch.PlayerCount; s++)
-                safe = System.Math.Min(safe, inputs.LastConfirmedTick(s));
-            if (inputs.FirstMispredictedTick
-                != InputRingBuffer.NoMispredict)
-            {
-                safe = System.Math.Min(
-                    safe, inputs.FirstMispredictedTick - 1);
-            }
-            return safe;
+            return OnlineMatch.SafeTick();
         }
 
         void BroadcastConfirmedHash()
@@ -185,6 +175,7 @@ namespace FrogSmashers.Net.Rollback
                 SnapshotWire.MaxBytes, Allocator.Temp);
             using (writer)
             {
+                writer.WriteValueSafe(NetMessages.CurrentEpoch);
                 SnapshotWire.Write(ref writer, snap);
                 NetMessages.SendSnapshot(clientId, writer);
             }

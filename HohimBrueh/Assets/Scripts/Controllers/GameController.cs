@@ -74,7 +74,18 @@ public class GameController : MonoBehaviour, ISimTickable
     void Awake()
     {
         //Camera.main.aspect = 16f / 9f;
-        if (isJoinScreen)
+        if (isJoinScreen && FrogSmashers.Net.OnlineMatch.InLobby)
+        {
+            if (joinCanvas != null)
+            {
+                foreach (var jc in joinCanvas)
+                {
+                    if (jc != null)
+                        jc.gameObject.SetActive(false);
+                }
+            }
+        }
+        else if (isJoinScreen)
         {
             isShowDown = false;
             state = GameState.JoinScreen;
@@ -112,7 +123,7 @@ public class GameController : MonoBehaviour, ISimTickable
             inactivePlayers.Add(p);
 
         }
-        if (!isJoinScreen)
+        if (!isJoinScreen || FrogSmashers.Net.OnlineMatch.InLobby)
         {
             int i = 0;
             if (isTeamMode)
@@ -341,18 +352,38 @@ public class GameController : MonoBehaviour, ISimTickable
     }
 
     /// <summary>
+    /// Players stripped by a restore whose snapshot predates their
+    /// join; the online membership applier re-adds them on resim.
+    /// </summary>
+    public static readonly List<Player> StrippedPlayers =
+        new List<Player>();
+
+    /// <summary>
     /// Restores the complete sim state from a snapshot. Two passes:
     /// first ensure fly and character instances exist (reviving pooled
-    /// ones), then restore fields so cross-references resolve.
+    /// ones), then restore fields so cross-references resolve. Players
+    /// added after the snapshot's tick are stripped (dynamic join).
     /// </summary>
     public static bool RestoreFrom(MatchSnapshot snap)
     {
         if (instance == null || !snap.Valid
-            || snap.PlayerCount != Mathf.Min(
-                activePlayers.Count, MatchSnapshot.MaxPlayers))
+            || snap.PlayerCount > activePlayers.Count)
         {
             Debug.LogError("[GameController] Snapshot restore refused");
             return false;
+        }
+
+        while (activePlayers.Count > snap.PlayerCount)
+        {
+            var stripped = activePlayers[activePlayers.Count - 1];
+            if (stripped.character != null)
+            {
+                stripped.character.gameObject.SetActive(false);
+                stripped.pooledCharacter = stripped.character;
+                stripped.character = null;
+            }
+            activePlayers.RemoveAt(activePlayers.Count - 1);
+            StrippedPlayers.Add(stripped);
         }
 
         if (snap.HasFly && instance.activeFly == null)
@@ -461,7 +492,7 @@ public class GameController : MonoBehaviour, ISimTickable
         bool backToMenu =
             (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) ||
             (Gamepad.current != null && Gamepad.current.startButton.wasPressedThisFrame);
-        if (backToMenu)
+        if (backToMenu && !FrogSmashers.Net.OnlineMatch.Active)
         {
             UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenu");
             return;
@@ -653,6 +684,11 @@ public class GameController : MonoBehaviour, ISimTickable
     public static int levelNo;
     void FinishRound()
     {
+        if (FrogSmashers.Net.OnlineMatch.Active)
+        {
+            FrogSmashers.Net.OnlineMatch.OnRoundFinished();
+            return;
+        }
         if (state == GameState.JoinScreen)
         {
             levelNo = 0;
@@ -753,8 +789,8 @@ public class GameController : MonoBehaviour, ISimTickable
 
     internal static void RegisterKill(Player gotPoint, Player gotKilled, int hits)
     {
-
-
+        if (FrogSmashers.Net.OnlineMatch.InLobby)
+            return;
 
         if (State == GameState.RoundFinished)
             return;
