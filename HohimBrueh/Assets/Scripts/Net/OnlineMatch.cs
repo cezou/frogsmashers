@@ -88,6 +88,7 @@ namespace FrogSmashers.Net
                 return;
             Active = false;
             SceneManager.sceneLoaded -= OnSceneLoaded;
+            AuthoritySync.Stop();
             RollbackNetDriver.Stop();
             InputReader.ActiveSource = new LocalInputSource();
         }
@@ -136,6 +137,7 @@ namespace FrogSmashers.Net
             SimClock.ResetForNewMatch();
             DeterministicRng.Match.Reseed(Seed);
             RollbackNetDriver.Begin(LocalSlot, IsHost);
+            AuthoritySync.Begin(RollbackManager.Active, IsHost);
             sceneReady = true;
             if (IsHost)
                 TryGo();

@@ -21,6 +21,12 @@ namespace FrogSmashers.Net.Rollback
 
         public InputRingBuffer Inputs { get; }
 
+        /// <summary>Per-tick snapshots of the current match.</summary>
+        public SnapshotRingBuffer Snapshots
+        {
+            get { return snapshots; }
+        }
+
         readonly SnapshotRingBuffer snapshots;
 
         RollbackManager()

@@ -19,6 +19,8 @@ namespace FrogSmashers.Net.Transport
         const string readyMsg = "FSReady";
         const string goMsg = "FSGo";
         const string hashMsg = "FSHash";
+        const string snapRequestMsg = "FSSnapReq";
+        const string snapshotMsg = "FSSnap";
 
         /// <summary>Redundant input frames per packet.</summary>
         public const int InputWindow = 8;
@@ -38,6 +40,12 @@ namespace FrogSmashers.Net.Transport
         /// <summary>Raised on clients: authoritative (tick, hash).</summary>
         public static event Action<uint, uint> HostHashReceived;
 
+        /// <summary>Raised on the host: a client needs a snapshot.</summary>
+        public static event Action<ulong> SnapshotRequested;
+
+        /// <summary>Raised on clients with an authoritative snapshot.</summary>
+        public static event Action<FastBufferReader> SnapshotReceived;
+
         static bool registered;
 
         /// <summary>Registers handlers; call once connected.</summary>
@@ -53,6 +61,10 @@ namespace FrogSmashers.Net.Transport
             messaging.RegisterNamedMessageHandler(readyMsg, OnReadyMsg);
             messaging.RegisterNamedMessageHandler(goMsg, OnGoMsg);
             messaging.RegisterNamedMessageHandler(hashMsg, OnHashMsg);
+            messaging.RegisterNamedMessageHandler(
+                snapRequestMsg, OnSnapRequestMsg);
+            messaging.RegisterNamedMessageHandler(
+                snapshotMsg, OnSnapshotMsg);
             registered = true;
         }
 
@@ -70,7 +82,29 @@ namespace FrogSmashers.Net.Transport
                 messaging.UnregisterNamedMessageHandler(readyMsg);
                 messaging.UnregisterNamedMessageHandler(goMsg);
                 messaging.UnregisterNamedMessageHandler(hashMsg);
+                messaging.UnregisterNamedMessageHandler(snapRequestMsg);
+                messaging.UnregisterNamedMessageHandler(snapshotMsg);
             }
+        }
+
+        /// <summary>Client → host: please send a snapshot (reliable).</summary>
+        public static void SendSnapshotRequest()
+        {
+            using var writer = new FastBufferWriter(1, Allocator.Temp);
+            writer.WriteValueSafe((byte)1);
+            NetworkManager.Singleton.CustomMessagingManager
+                .SendNamedMessage(snapRequestMsg,
+                    NetworkManager.ServerClientId, writer,
+                    NetworkDelivery.ReliableSequenced);
+        }
+
+        /// <summary>Host → client: authoritative snapshot payload.</summary>
+        public static void SendSnapshot(
+            ulong targetClientId, FastBufferWriter writer)
+        {
+            NetworkManager.Singleton.CustomMessagingManager
+                .SendNamedMessage(snapshotMsg, targetClientId, writer,
+                    NetworkDelivery.ReliableFragmentedSequenced);
         }
 
         /// <summary>Host → client: match parameters (reliable).</summary>
@@ -183,6 +217,19 @@ namespace FrogSmashers.Net.Transport
             reader.ReadValueSafe(out uint tick);
             reader.ReadValueSafe(out uint hash);
             HostHashReceived?.Invoke(tick, hash);
+        }
+
+        static void OnSnapRequestMsg(
+            ulong senderClientId, FastBufferReader reader)
+        {
+            reader.ReadValueSafe(out byte _);
+            SnapshotRequested?.Invoke(senderClientId);
+        }
+
+        static void OnSnapshotMsg(
+            ulong senderClientId, FastBufferReader reader)
+        {
+            SnapshotReceived?.Invoke(reader);
         }
     }
 }

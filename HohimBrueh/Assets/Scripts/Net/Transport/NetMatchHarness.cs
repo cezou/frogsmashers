@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using FrogSmashers.Net.Rollback;
@@ -13,29 +12,26 @@ namespace FrogSmashers.Net.Transport
     /// -netMatchJoin (plus -scriptedLocal on both so each instance
     /// generates a different deterministic input stream for its own
     /// slot): both peers play the same match through the relay with
-    /// prediction and rollback. The host broadcasts its state hash
-    /// every 30 ticks; the client compares it against its own
-    /// post-rollback hash once the tick is fully confirmed. Pass: the
-    /// match reaches 1800 ticks with zero hash mismatches.
+    /// prediction and rollback while AuthoritySync compares the
+    /// client's state against the host's authoritative hashes.
+    /// Pass: 1800 ticks with zero desyncs. With -injectDesync the
+    /// client corrupts its state at tick 700 and must be repaired by
+    /// an authoritative snapshot, with clean checkpoints afterwards.
+    /// Exit codes: 0 pass, 1 fail, 2 inconclusive.
     /// </summary>
     public class NetMatchHarness : MonoBehaviour, ISimTickable
     {
         const int matchTicks = 1800;
-        const uint hashInterval = 30;
         const ulong matchSeed = 0xF706C0DEUL;
         const float watchdogSeconds = 240f;
-        const int hashRing = 4096;
+        const uint corruptionTick = 700;
 
         static bool isHost;
+        static bool injectDesync;
         static NetMatchHarness instance;
 
-        readonly uint[] ownHashes = new uint[hashRing];
-        readonly uint[] ownHashTicks = new uint[hashRing];
-        readonly SortedDictionary<uint, uint> pendingHostHashes =
-            new SortedDictionary<uint, uint>();
-        uint lastBroadcastTick;
-        int comparedCount;
-        int mismatchCount;
+        int desyncsBeforeCorrection;
+        bool corrupted;
         bool finished;
 
         static string CodeFile
@@ -57,12 +53,13 @@ namespace FrogSmashers.Net.Transport
             if (!host && !join)
                 return;
             isHost = host;
+            injectDesync = HasCliArg("-injectDesync");
             var go = new GameObject("NetMatchHarness");
             DontDestroyOnLoad(go);
             instance = go.AddComponent<NetMatchHarness>();
         }
 
-        /// <summary>Hashes after the whole tick has simulated.</summary>
+        /// <summary>Runs after AuthoritySync has hashed the tick.</summary>
         public int SimOrder
         {
             get { return 10000; }
@@ -70,7 +67,8 @@ namespace FrogSmashers.Net.Transport
 
         async void Start()
         {
-            Debug.Log($"[NetMatch] role={(isHost ? "host" : "join")}");
+            Debug.Log($"[NetMatch] role={(isHost ? "host" : "join")}"
+                + $" injectDesync={injectDesync}");
             Invoke(nameof(Watchdog), watchdogSeconds);
             try
             {
@@ -108,100 +106,42 @@ namespace FrogSmashers.Net.Transport
             string code = File.ReadAllText(CodeFile).Trim();
             await NetSession.JoinByCodeAsync(code);
             OnlineMatch.Listen();
-            NetMessages.HostHashReceived += OnHostHash;
             SimulationDriver.Register(this);
             Debug.Log("[NetMatch] joined, waiting for match start");
         }
 
         public void SimTick(float dt)
         {
-            if (!OnlineMatch.Active || finished)
+            if (!OnlineMatch.Active || finished
+                || SimulationDriver.IsResimulating)
+            {
                 return;
+            }
             uint tick = SimClock.CurrentTick;
-            ownHashes[tick % hashRing] = MatchHasher.Compute();
-            ownHashTicks[tick % hashRing] = tick;
 
-            if (SimulationDriver.IsResimulating)
-                return;
-
-            if (isHost)
-                BroadcastConfirmedHash();
-            else
-                CompareReadyHashes();
+            if (injectDesync && !isHost && !corrupted
+                && tick == corruptionTick)
+            {
+                CorruptState();
+            }
 
             if (tick >= matchTicks)
                 Finish();
         }
 
-        void BroadcastConfirmedHash()
+        void CorruptState()
         {
-            uint safe = SafeTick();
-            if (safe == uint.MaxValue || safe == 0)
-                return;
-            uint target = safe - (safe % hashInterval);
-            if (target <= lastBroadcastTick
-                || ownHashTicks[target % hashRing] != target)
+            corrupted = true;
+            var players = GameController.activePlayers;
+            if (players.Count > 0 && players[0].character != null)
             {
-                return;
+                players[0].character.transform.position +=
+                    new Vector3(3f, 2f, 0f);
+                desyncsBeforeCorrection =
+                    AuthoritySync.Active.DesyncCount;
+                Debug.Log("[NetMatch] State corrupted at tick"
+                    + $" {SimClock.CurrentTick}");
             }
-            lastBroadcastTick = target;
-            BroadcastHash(target);
-        }
-
-        uint SafeTick()
-        {
-            var inputs = RollbackManager.Active.Inputs;
-            uint safe = uint.MaxValue;
-            for (int s = 0; s < OnlineMatch.PlayerCount; s++)
-                safe = System.Math.Min(safe, inputs.LastConfirmedTick(s));
-            if (inputs.FirstMispredictedTick
-                != InputRingBuffer.NoMispredict)
-            {
-                safe = System.Math.Min(
-                    safe, inputs.FirstMispredictedTick - 1);
-            }
-            return safe;
-        }
-
-        void BroadcastHash(uint tick)
-        {
-            var manager = NetworkManager.Singleton;
-            uint hash = ownHashes[tick % hashRing];
-            foreach (var clientId in manager.ConnectedClientsIds)
-            {
-                if (clientId != manager.LocalClientId)
-                    NetMessages.SendHostHash(clientId, tick, hash);
-            }
-        }
-
-        void OnHostHash(uint tick, uint hash)
-        {
-            pendingHostHashes[tick] = hash;
-        }
-
-        void CompareReadyHashes()
-        {
-            uint safe = SafeTick();
-            var done = new List<uint>();
-            foreach (var entry in pendingHostHashes)
-            {
-                if (entry.Key > safe)
-                    break;
-                done.Add(entry.Key);
-                if (ownHashTicks[entry.Key % hashRing] != entry.Key)
-                    continue;
-                uint own = ownHashes[entry.Key % hashRing];
-                comparedCount++;
-                if (own != entry.Value)
-                {
-                    mismatchCount++;
-                    Debug.Log("[NetMatch] DESYNC at tick"
-                        + $" {entry.Key}: host={entry.Value:X8}"
-                        + $" local={own:X8}");
-                }
-            }
-            foreach (var tick in done)
-                pendingHostHashes.Remove(tick);
         }
 
         void Finish()
@@ -222,25 +162,65 @@ namespace FrogSmashers.Net.Transport
 
         void EvaluateClient()
         {
-            CompareReadyHashes();
-            if (mismatchCount > 0)
+            var sync = AuthoritySync.Active;
+            Debug.Log($"[NetMatch] compared={sync.ComparedCount}"
+                + $" desyncs={sync.DesyncCount}"
+                + $" corrections={sync.CorrectionCount}");
+            if (injectDesync)
+                EvaluateRecovery(sync);
+            else
+                EvaluateClean(sync);
+        }
+
+        void EvaluateClean(AuthoritySync sync)
+        {
+            if (sync.DesyncCount > 0)
             {
                 Debug.Log("[NetMatch] FAIL:"
-                    + $" {mismatchCount} desyncs over"
-                    + $" {comparedCount} compared hashes");
+                    + $" {sync.DesyncCount} desyncs over"
+                    + $" {sync.ComparedCount} compared hashes");
                 Application.Quit(1);
             }
-            else if (comparedCount < 30)
+            else if (sync.ComparedCount < 30)
             {
                 Debug.Log("[NetMatch] INCONCLUSIVE: only"
-                    + $" {comparedCount} hashes compared");
+                    + $" {sync.ComparedCount} hashes compared");
                 Application.Quit(2);
             }
             else
             {
                 Debug.Log("[NetMatch] PASS:"
-                    + $" {comparedCount} authoritative hashes matched,"
-                    + " zero desyncs");
+                    + $" {sync.ComparedCount} authoritative hashes"
+                    + " matched, zero desyncs");
+                Application.Quit(0);
+            }
+        }
+
+        void EvaluateRecovery(AuthoritySync sync)
+        {
+            if (!corrupted)
+            {
+                Debug.Log("[NetMatch] INCONCLUSIVE: corruption never"
+                    + " injected");
+                Application.Quit(2);
+            }
+            else if (sync.DesyncCount <= desyncsBeforeCorrection)
+            {
+                Debug.Log("[NetMatch] FAIL: corruption was never"
+                    + " detected");
+                Application.Quit(1);
+            }
+            else if (sync.CorrectionCount < 1)
+            {
+                Debug.Log("[NetMatch] FAIL: desync detected but no"
+                    + " snapshot correction applied");
+                Application.Quit(1);
+            }
+            else
+            {
+                Debug.Log("[NetMatch] PASS: injected desync detected"
+                    + $" ({sync.DesyncCount}) and corrected"
+                    + $" ({sync.CorrectionCount} snapshot restores)");
                 Application.Quit(0);
             }
         }
