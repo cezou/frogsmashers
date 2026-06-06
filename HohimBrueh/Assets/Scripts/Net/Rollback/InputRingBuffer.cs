@@ -27,6 +27,7 @@ namespace FrogSmashers.Net.Rollback
 
         readonly Cell[][] cells;
         readonly uint[] lastConfirmedTick;
+        readonly uint[] contiguousConfirmedTick;
         readonly ushort[] lastConfirmedInput;
 
         uint firstMispredictedTick = NoMispredict;
@@ -37,6 +38,7 @@ namespace FrogSmashers.Net.Rollback
             for (int s = 0; s < MaxSlots; s++)
                 cells[s] = new Cell[Capacity];
             lastConfirmedTick = new uint[MaxSlots];
+            contiguousConfirmedTick = new uint[MaxSlots];
             lastConfirmedInput = new ushort[MaxSlots];
         }
 
@@ -55,10 +57,22 @@ namespace FrogSmashers.Net.Rollback
             firstMispredictedTick = NoMispredict;
         }
 
-        /// <summary>Latest confirmed tick for a slot.</summary>
+        /// <summary>Latest confirmed tick for a slot (may have older
+        /// gaps behind it; use for pacing, not safety).</summary>
         public uint LastConfirmedTick(int slot)
         {
             return lastConfirmedTick[slot];
+        }
+
+        /// <summary>
+        /// Latest tick for a slot with no unconfirmed tick behind it
+        /// (anchored at the slot's first confirm). State at or before
+        /// this tick is built from real inputs only, never from
+        /// predictions, so authority checks are safe up to here.
+        /// </summary>
+        public uint ContiguousConfirmedTick(int slot)
+        {
+            return contiguousConfirmedTick[slot];
         }
 
         /// <summary>Stores a confirmed input (local or from network).</summary>
@@ -79,6 +93,24 @@ namespace FrogSmashers.Net.Rollback
             {
                 lastConfirmedTick[slot] = tick;
                 lastConfirmedInput[slot] = input;
+            }
+            AdvanceContiguous(slot, tick);
+        }
+
+        void AdvanceContiguous(int slot, uint tick)
+        {
+            if (contiguousConfirmedTick[slot] == 0)
+                contiguousConfirmedTick[slot] = tick;
+            else if (tick != contiguousConfirmedTick[slot] + 1)
+                return;
+            uint next = contiguousConfirmedTick[slot] + 1;
+            while (true)
+            {
+                ref var cell = ref cells[slot][next % Capacity];
+                if (cell.Tick != next || !cell.Confirmed)
+                    break;
+                contiguousConfirmedTick[slot] = next;
+                next++;
             }
         }
 
@@ -123,6 +155,7 @@ namespace FrogSmashers.Net.Rollback
             {
                 System.Array.Clear(cells[s], 0, Capacity);
                 lastConfirmedTick[s] = 0;
+                contiguousConfirmedTick[s] = 0;
                 lastConfirmedInput[s] = 0;
             }
             firstMispredictedTick = NoMispredict;

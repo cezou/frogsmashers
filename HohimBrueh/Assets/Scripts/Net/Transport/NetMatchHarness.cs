@@ -27,10 +27,14 @@ namespace FrogSmashers.Net.Transport
         const ulong matchSeed = 0xF706C0DEUL;
         const float watchdogSeconds = 300f;
         const uint corruptionTick = 700;
+        const int maxP95RollbackTicks = 15;
+        const int maxRollbackDepthTicks = 30;
+        const float maxCorrectionsPerMinute = 2f;
 
         static bool isHost;
         static bool injectDesync;
         static bool lobbyMode;
+        static int netPlayers = 2;
         static NetMatchHarness instance;
 
         int desyncsBeforeCorrection;
@@ -62,6 +66,7 @@ namespace FrogSmashers.Net.Transport
             isHost = host || lobbyHost;
             lobbyMode = lobbyHost || lobbyJoin;
             injectDesync = HasCliArg("-injectDesync");
+            netPlayers = GetCliArgInt("-netPlayers", 2);
             var go = new GameObject("NetMatchHarness");
             DontDestroyOnLoad(go);
             instance = go.AddComponent<NetMatchHarness>();
@@ -106,9 +111,10 @@ namespace FrogSmashers.Net.Transport
                 return;
             }
             var manager = NetworkManager.Singleton;
-            while (manager.ConnectedClientsIds.Count < 2)
+            while (manager.ConnectedClientsIds.Count < netPlayers)
                 await Task.Delay(250);
-            Debug.Log("[NetMatch] client connected, starting match");
+            Debug.Log($"[NetMatch] {netPlayers - 1} client(s)"
+                + " connected, starting match");
             SimulationDriver.Register(this);
             OnlineMatch.HostStart(matchSeed);
         }
@@ -130,8 +136,11 @@ namespace FrogSmashers.Net.Transport
         {
             if (!lobbyMode || finished || readySent)
                 return;
-            if (!OnlineMatch.InLobby || OnlineMatch.PlayerCount < 2)
+            if (!OnlineMatch.InLobby
+                || OnlineMatch.PlayerCount < netPlayers)
+            {
                 return;
+            }
             if (lobbyReadyAt < 0f)
             {
                 lobbyReadyAt = Time.time + lobbyBrawlSeconds;
@@ -191,6 +200,7 @@ namespace FrogSmashers.Net.Transport
             SimulationDriver.Unregister(this);
             if (isHost)
             {
+                Debug.Log(RollbackMetrics.Summary());
                 Debug.Log("[NetMatch] PASS: host reached tick"
                     + $" {matchTicks}");
                 Invoke(nameof(QuitOk), 5f);
@@ -207,6 +217,7 @@ namespace FrogSmashers.Net.Transport
             Debug.Log($"[NetMatch] compared={sync.ComparedCount}"
                 + $" desyncs={sync.DesyncCount}"
                 + $" corrections={sync.CorrectionCount}");
+            Debug.Log(RollbackMetrics.Summary());
             if (injectDesync)
                 EvaluateRecovery(sync);
             else
@@ -228,6 +239,10 @@ namespace FrogSmashers.Net.Transport
                     + $" {sync.ComparedCount} hashes compared");
                 Application.Quit(2);
             }
+            else if (NetSimulator.Enabled && !MetricsHealthy(sync))
+            {
+                Application.Quit(1);
+            }
             else
             {
                 Debug.Log("[NetMatch] PASS:"
@@ -235,6 +250,40 @@ namespace FrogSmashers.Net.Transport
                     + " matched, zero desyncs");
                 Application.Quit(0);
             }
+        }
+
+        /// <summary>
+        /// Latency-gate assertions: under simulated network
+        /// conditions the rollback must stay shallow and corrections
+        /// rare, otherwise the tuning is wrong even with no desync.
+        /// </summary>
+        bool MetricsHealthy(AuthoritySync sync)
+        {
+            int p95 = RollbackMetrics.DepthPercentile(0.95);
+            int max = RollbackMetrics.MaxDepth;
+            int ticks = lobbyMode ? lobbyMatchTicks : matchTicks;
+            float minutes = ticks / SimClock.TickRate / 60f;
+            float perMinute = sync.CorrectionCount / minutes;
+            if (p95 >= maxP95RollbackTicks)
+            {
+                Debug.Log("[NetMatch] FAIL: p95 rollback depth"
+                    + $" {p95} >= {maxP95RollbackTicks} ticks");
+                return false;
+            }
+            if (max >= maxRollbackDepthTicks)
+            {
+                Debug.Log("[NetMatch] FAIL: max rollback depth"
+                    + $" {max} >= {maxRollbackDepthTicks} ticks");
+                return false;
+            }
+            if (perMinute > maxCorrectionsPerMinute)
+            {
+                Debug.Log("[NetMatch] FAIL:"
+                    + $" {perMinute:0.0} corrections/min >"
+                    + $" {maxCorrectionsPerMinute}");
+                return false;
+            }
+            return true;
         }
 
         void EvaluateRecovery(AuthoritySync sync)
@@ -289,6 +338,20 @@ namespace FrogSmashers.Net.Transport
                     return true;
             }
             return false;
+        }
+
+        static int GetCliArgInt(string name, int fallback)
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == name
+                    && int.TryParse(args[i + 1], out int value))
+                {
+                    return value;
+                }
+            }
+            return fallback;
         }
     }
 }

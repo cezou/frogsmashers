@@ -14,7 +14,7 @@ namespace FrogSmashers.Net.Rollback
     public class RollbackManager
     {
         const int snapshotCapacity = 128;
-        const int maxRollbackTicks = 30;
+        const int maxRollbackTicks = 60;
 
         /// <summary>Manager driving the current online session.</summary>
         public static RollbackManager Active { get; private set; }
@@ -103,6 +103,8 @@ namespace FrogSmashers.Net.Rollback
             }
 
             Inputs.AcknowledgeMispredict();
+            RollbackMetrics.RecordRollback(
+                (int)(present + 1 - mispredicted));
             SimulationDriver.IsResimulating = true;
             while (SimClock.CurrentTick < present)
                 SimulationDriver.StepNow();

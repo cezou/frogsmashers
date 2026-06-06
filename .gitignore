@@ -73,3 +73,6 @@ crashlytics-build.properties
 /PLANGLOBAL.md
 /PHASE*.md
 
+# Local gate/test logs
+/*.log
+

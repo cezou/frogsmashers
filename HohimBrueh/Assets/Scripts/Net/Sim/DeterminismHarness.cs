@@ -32,13 +32,15 @@ namespace FrogSmashers.Net.Sim
         class InputFeeder : ISimTickable
         {
             readonly InputRingBuffer buffer;
+            readonly int players;
             readonly ScriptedInputSource script =
                 new ScriptedInputSource();
             readonly InputState scratch = new InputState();
 
-            public InputFeeder(InputRingBuffer buffer)
+            public InputFeeder(InputRingBuffer buffer, int players)
             {
                 this.buffer = buffer;
+                this.players = players;
             }
 
             public int SimOrder
@@ -48,8 +50,8 @@ namespace FrogSmashers.Net.Sim
 
             public void SimTick(float dt)
             {
-                Feed(InputReader.Device.Gamepad1, 0);
-                Feed(InputReader.Device.Gamepad2, 1);
+                for (int slot = 0; slot < players; slot++)
+                    Feed(InputReader.Device.Gamepad1 + slot, slot);
             }
 
             void Feed(InputReader.Device device, int slot)
@@ -61,20 +63,23 @@ namespace FrogSmashers.Net.Sim
         }
 
         /// <summary>
-        /// Confirms slot 0 at the current tick but slot 1 only 5 ticks
-        /// late, so slot 1 is simulated from predictions first and the
-        /// rollback loop must repair every wrong guess.
+        /// Confirms slot 0 at the current tick but every other slot N
+        /// staggered N*5 ticks late, so the late slots are simulated
+        /// from predictions first and the rollback loop must repair
+        /// every wrong guess.
         /// </summary>
         class DelayedFeeder : ISimTickable
         {
             public const uint Delay = 5;
 
             readonly InputRingBuffer buffer;
+            readonly int players;
             readonly InputState scratch = new InputState();
 
-            public DelayedFeeder(InputRingBuffer buffer)
+            public DelayedFeeder(InputRingBuffer buffer, int players)
             {
                 this.buffer = buffer;
+                this.players = players;
             }
 
             public int SimOrder
@@ -82,18 +87,26 @@ namespace FrogSmashers.Net.Sim
                 get { return -100; }
             }
 
+            /// <summary>Largest stagger across the late slots.</summary>
+            public static uint MaxDelay(int players)
+            {
+                return Delay * (uint)(players - 1);
+            }
+
             public void SimTick(float dt)
             {
                 uint tick = SimClock.CurrentTick;
-                ScriptedInputSource.ReadForTick(
-                    tick, InputReader.Device.Gamepad1, scratch);
-                buffer.Confirm(0, tick, InputPacking.Pack(scratch));
-                if (tick <= Delay)
-                    return;
-                uint late = tick - Delay;
-                ScriptedInputSource.ReadForTick(
-                    late, InputReader.Device.Gamepad2, scratch);
-                buffer.Confirm(1, late, InputPacking.Pack(scratch));
+                for (int slot = 0; slot < players; slot++)
+                {
+                    uint delay = Delay * (uint)slot;
+                    if (tick <= delay)
+                        continue;
+                    uint late = tick - delay;
+                    ScriptedInputSource.ReadForTick(late,
+                        InputReader.Device.Gamepad1 + slot, scratch);
+                    buffer.Confirm(
+                        slot, late, InputPacking.Pack(scratch));
+                }
             }
         }
 
@@ -104,11 +117,17 @@ namespace FrogSmashers.Net.Sim
         const uint snapStartTick = 600;
         const uint snapEndTick = 900;
 
+        static readonly Color[] slotColors =
+        {
+            Color.red, Color.blue, Color.green, Color.yellow,
+        };
+
         /// <summary>True when the harness drives the current process.</summary>
         public static bool Active { get; private set; }
 
         static DeterminismHarness instance;
         static Mode mode;
+        static int netPlayers = 2;
 
         readonly List<uint> runA = new List<uint>(ticksPerRun);
         readonly List<uint> runB = new List<uint>(ticksPerRun);
@@ -137,7 +156,9 @@ namespace FrogSmashers.Net.Sim
                 return;
 
             Active = true;
-            Debug.Log($"[DeterminismHarness] Active, mode={mode}");
+            netPlayers = GetCliArgInt("-netPlayers", 2);
+            Debug.Log($"[DeterminismHarness] Active, mode={mode},"
+                + $" players={netPlayers}");
             Application.targetFrameRate = 300;
             QualitySettings.vSyncCount = 0;
             SimulationDriver.ForcedTicksPerFrame = 10;
@@ -166,15 +187,17 @@ namespace FrogSmashers.Net.Sim
             SimulationDriver.Paused = true;
             recording = false;
             GameController.activePlayers.Clear();
-            GameController.activePlayers.Add(new Player(
-                InputReader.Device.Gamepad1, Color.red, 0));
-            GameController.activePlayers.Add(new Player(
-                InputReader.Device.Gamepad2, Color.blue, 1));
+            for (int slot = 0; slot < netPlayers; slot++)
+            {
+                GameController.activePlayers.Add(new Player(
+                    InputReader.Device.Gamepad1 + slot,
+                    slotColors[slot], slot));
+            }
             GameController.isTeamMode = false;
             if (mode == Mode.InputPipe && runIndex == 1)
             {
                 inputBuffer = new InputRingBuffer();
-                feeder = new InputFeeder(inputBuffer);
+                feeder = new InputFeeder(inputBuffer, netPlayers);
                 InputReader.ActiveSource =
                     new RollbackInputSource(inputBuffer);
             }
@@ -183,14 +206,15 @@ namespace FrogSmashers.Net.Sim
                 if (runIndex == 0)
                 {
                     inputBuffer = new InputRingBuffer();
-                    feeder = new InputFeeder(inputBuffer);
+                    feeder = new InputFeeder(inputBuffer, netPlayers);
                     InputReader.ActiveSource =
                         new RollbackInputSource(inputBuffer);
                 }
                 else
                 {
                     var manager = RollbackManager.Enable();
-                    feeder = new DelayedFeeder(manager.Inputs);
+                    feeder = new DelayedFeeder(
+                        manager.Inputs, netPlayers);
                 }
             }
             SceneManager.LoadScene(levelName);
@@ -296,7 +320,8 @@ namespace FrogSmashers.Net.Sim
 
         void CompareRollback()
         {
-            int confirmed = ticksPerRun - (int)DelayedFeeder.Delay;
+            int confirmed = ticksPerRun
+                - (int)DelayedFeeder.MaxDelay(netPlayers);
             for (int i = 0; i < confirmed; i++)
             {
                 if (runATicks[i] != runBTicks[i])
@@ -310,8 +335,9 @@ namespace FrogSmashers.Net.Sim
                 }
             }
             Debug.Log("[DeterminismHarness] PASS: rollback run with"
-                + $" {DelayedFeeder.Delay}-tick-late slot 1 inputs"
-                + $" matches ground truth on {confirmed} ticks");
+                + $" {netPlayers - 1} late slot(s) (stagger"
+                + $" {DelayedFeeder.Delay}) matches ground truth on"
+                + $" {confirmed} ticks");
             Quit(0);
         }
 
@@ -423,6 +449,20 @@ namespace FrogSmashers.Net.Sim
                     return true;
             }
             return false;
+        }
+
+        static int GetCliArgInt(string name, int fallback)
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == name
+                    && int.TryParse(args[i + 1], out int value))
+                {
+                    return value;
+                }
+            }
+            return fallback;
         }
     }
 }
