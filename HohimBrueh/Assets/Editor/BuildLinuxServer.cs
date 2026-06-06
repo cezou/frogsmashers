@@ -36,6 +36,13 @@ namespace FrogSmashers.Editor
             foreach (var s in EditorBuildSettings.scenes)
                 if (s.enabled) scenes.Add(s.path);
 
+            // The ARM64 server builder persists IL2CPP + ARM64 in the
+            // project; explicitly pin this build's own settings or the
+            // Linux postprocessor NREs on the missing cross toolchain.
+            PlayerSettings.SetScriptingBackend(NamedBuildTarget.Server, ScriptingImplementation.Mono2x);
+            EditorUserBuildSettings.SetPlatformSettings("Standalone", "Linux64", "Architecture", "x64");
+            EditorUserBuildSettings.SetPlatformSettings("Server", "Linux64", "Architecture", "x64");
+
             var options = new BuildPlayerOptions
             {
                 scenes = scenes.ToArray(),

@@ -17,6 +17,14 @@ namespace FrogSmashers.Net.Rollback
     /// </summary>
     public class RollbackNetDriver : ISimTickable
     {
+        /// <summary>
+        /// Max ticks the local sim may run ahead of the slowest remote
+        /// slot's contiguous confirmed inputs; beyond it the sim stalls
+        /// until inputs arrive, so a remote hitch becomes a brief
+        /// freeze instead of an unrepairable misprediction.
+        /// </summary>
+        const uint maxPredictionTicks = 20;
+
         /// <summary>Driver of the current online match.</summary>
         public static RollbackNetDriver Active { get; private set; }
 
@@ -24,7 +32,10 @@ namespace FrogSmashers.Net.Rollback
         readonly LocalInputSource poller = new LocalInputSource();
         readonly InputState keyboard = new InputState();
         readonly InputState gamepad = new InputState();
-        readonly ushort[] window = new ushort[NetMessages.InputWindow];
+        readonly InputBatch batch = new InputBatch();
+        readonly System.Collections.Generic.Dictionary<ulong, uint[]>
+            peerAcks =
+                new System.Collections.Generic.Dictionary<ulong, uint[]>();
         readonly int localSlot;
         readonly bool isHost;
 
@@ -48,9 +59,12 @@ namespace FrogSmashers.Net.Rollback
             Active = new RollbackNetDriver(localSlot, isHost);
             NetMessages.Register();
             NetMessages.InputReceived += Active.OnInputReceived;
+            NetMessages.InputAckReceived += Active.OnInputAckReceived;
             SimulationDriver.TickCompleted += Active.OnTickCompleted;
+            SimulationDriver.MayStep = Active.WithinPredictionWindow;
             SimulationDriver.Register(Active);
             Active.rollback.SaveBaseline();
+            RollbackMetrics.Reset();
             return Active;
         }
 
@@ -59,8 +73,11 @@ namespace FrogSmashers.Net.Rollback
         {
             if (Active == null)
                 return;
+            Debug.Log(RollbackMetrics.Summary());
             NetMessages.InputReceived -= Active.OnInputReceived;
+            NetMessages.InputAckReceived -= Active.OnInputAckReceived;
             SimulationDriver.TickCompleted -= Active.OnTickCompleted;
+            SimulationDriver.MayStep = null;
             SimulationDriver.Unregister(Active);
             NetMessages.Unregister();
             RollbackManager.Disable();
@@ -140,13 +157,44 @@ namespace FrogSmashers.Net.Rollback
                 return;
             if (isHost)
             {
-                SendAllSlotsToClients();
+                var manager = NetworkManager.Singleton;
+                foreach (var clientId in manager.ConnectedClientsIds)
+                {
+                    if (clientId != manager.LocalClientId)
+                        SendBatchTo(clientId, true);
+                }
             }
             else
             {
-                SendSlotTo(NetworkManager.ServerClientId, localSlot);
+                SendBatchTo(NetworkManager.ServerClientId, false);
                 SyncPaceToHost(tick);
             }
+        }
+
+        /// <summary>
+        /// SimulationDriver gate: false while any active remote slot's
+        /// confirmed inputs lag the present by more than the
+        /// prediction window (the freeze is recorded in the metrics).
+        /// </summary>
+        bool WithinPredictionWindow()
+        {
+            uint present = SimClock.CurrentTick;
+            for (int slot = 0;
+                slot < InputRingBuffer.MaxSlots; slot++)
+            {
+                if (slot == localSlot)
+                    continue;
+                uint contiguous =
+                    rollback.Inputs.ContiguousConfirmedTick(slot);
+                if (contiguous == 0)
+                    continue;
+                if (present > contiguous + maxPredictionTicks)
+                {
+                    RollbackMetrics.RecordStallFrame();
+                    return false;
+                }
+            }
+            return true;
         }
 
         void SyncPaceToHost(uint tick)
@@ -155,53 +203,91 @@ namespace FrogSmashers.Net.Rollback
             if (hostConfirmed == 0)
                 return;
             long lead = (long)hostConfirmed - tick;
+            bool biased = false;
             if (lead > 3)
+            {
                 SimulationDriver.PaceBias = (int)System.Math.Min(
                     lead - 2, 8);
-            else if (lead < -10)
-                SimulationDriver.PaceBias = -1;
-        }
-
-        void SendAllSlotsToClients()
-        {
-            var manager = NetworkManager.Singleton;
-            foreach (var clientId in manager.ConnectedClientsIds)
-            {
-                if (clientId == manager.LocalClientId)
-                    continue;
-                for (int slot = 0;
-                    slot < InputRingBuffer.MaxSlots; slot++)
-                {
-                    if (rollback.Inputs.LastConfirmedTick(slot) > 0)
-                        SendSlotTo(clientId, slot);
-                }
+                biased = true;
             }
+            else if (lead < -10)
+            {
+                SimulationDriver.PaceBias = -1;
+                biased = true;
+            }
+            RollbackMetrics.RecordPace(lead, biased);
         }
 
-        void SendSlotTo(ulong clientId, int slot)
+        /// <summary>
+        /// Sends one packet to a peer with, per relayed slot, the
+        /// contiguous confirmed window starting right after that
+        /// peer's last ack (capped to the max window): lost packets
+        /// are retransmitted until acknowledged, so confirmed input
+        /// streams never end up with permanent holes.
+        /// </summary>
+        void SendBatchTo(ulong peerId, bool allSlots)
         {
-            uint lastTick = rollback.Inputs.LastConfirmedTick(slot);
-            if (lastTick == 0)
-                return;
-            int count = 0;
-            for (int i = NetMessages.InputWindow - 1; i >= 0; i--)
+            var inputs = rollback.Inputs;
+            uint[] acks = AcksFor(peerId);
+            batch.SlotCount = 0;
+            for (int slot = 0;
+                slot < InputRingBuffer.MaxSlots; slot++)
             {
-                uint tick = lastTick - (uint)i;
-                if (tick == 0 || tick > lastTick)
+                if (!allSlots && slot != localSlot)
                     continue;
+                uint lastTick = inputs.LastConfirmedTick(slot);
+                if (lastTick == 0 || lastTick <= acks[slot])
+                    continue;
+                FillSlotWindow(slot, lastTick, acks[slot]);
+            }
+            for (int s = 0; s < NetMessages.AckSlots; s++)
+                batch.Acks[s] = inputs.ContiguousConfirmedTick(s);
+            NetMessages.SendInputBatch(peerId, batch);
+        }
+
+        void FillSlotWindow(int slot, uint lastTick, uint ack)
+        {
+            uint first = ack + 1;
+            uint span = lastTick - first + 1;
+            if (span > NetMessages.MaxInputWindow)
+                first = lastTick - NetMessages.MaxInputWindow + 1;
+            int count = 0;
+            var window = batch.Inputs[batch.SlotCount];
+            for (uint tick = first; tick <= lastTick; tick++)
+            {
                 if (rollback.Inputs.TryGetConfirmed(
                     slot, tick, out ushort input))
                 {
                     window[count++] = input;
                 }
-                else if (count > 0)
+                else
                 {
                     count = 0;
                 }
             }
-            if (count > 0)
-                NetMessages.SendInputs(
-                    clientId, slot, lastTick, window, count);
+            if (count == 0)
+                return;
+            batch.Slots[batch.SlotCount] = (byte)slot;
+            batch.LastTicks[batch.SlotCount] = lastTick;
+            batch.Counts[batch.SlotCount] = (byte)count;
+            batch.SlotCount++;
+        }
+
+        uint[] AcksFor(ulong peerId)
+        {
+            if (!peerAcks.TryGetValue(peerId, out uint[] acks))
+            {
+                acks = new uint[NetMessages.AckSlots];
+                peerAcks[peerId] = acks;
+            }
+            return acks;
+        }
+
+        void OnInputAckReceived(ulong senderId, int slot, uint ack)
+        {
+            uint[] acks = AcksFor(senderId);
+            if (ack > acks[slot])
+                acks[slot] = ack;
         }
 
         void OnInputReceived(int slot, uint tick, ushort input)

@@ -123,7 +123,10 @@ namespace FrogSmashers.Net
 
         /// <summary>
         /// Newest tick whose inputs are confirmed for every roster
-        /// slot (and below any pending misprediction).
+        /// slot with no unconfirmed gap behind it (and below any
+        /// pending misprediction). Gap-free matters: a dropped input
+        /// packet must never let authoritative hashes or snapshots be
+        /// built on predicted inputs.
         /// </summary>
         public static uint SafeTick()
         {
@@ -132,7 +135,7 @@ namespace FrogSmashers.Net
             for (int i = 0; i < roster.Count; i++)
             {
                 uint confirmed =
-                    inputs.LastConfirmedTick(roster[i].Slot);
+                    inputs.ContiguousConfirmedTick(roster[i].Slot);
                 if (roster[i].ApplyTick > 0)
                 {
                     confirmed = System.Math.Max(

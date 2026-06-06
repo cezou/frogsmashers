@@ -53,6 +53,7 @@ namespace FrogSmashers.Net.Transport
             Object.DontDestroyOnLoad(host);
             var manager = host.AddComponent<NetworkManager>();
             var transport = host.AddComponent<UnityTransport>();
+            host.AddComponent<FrogSmashers.Net.UI.NetHud>();
             if (System.Array.IndexOf(
                 System.Environment.GetCommandLineArgs(), "-relayWss")
                 >= 0)

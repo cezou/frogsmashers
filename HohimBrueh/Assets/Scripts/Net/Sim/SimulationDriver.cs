@@ -37,6 +37,14 @@ namespace FrogSmashers.Net.Sim
         /// </summary>
         public static int PaceBias { get; set; }
 
+        /// <summary>
+        /// Optional gate consulted before every live step. Returning
+        /// false stalls the simulation (prediction window exhausted:
+        /// waiting for remote inputs). Never consulted by resimulation
+        /// (<see cref="StepNow"/>) nor by the forced harness path.
+        /// </summary>
+        public static System.Func<bool> MayStep { get; set; }
+
         /// <summary>Fires before every live step (rollback checkpoint).</summary>
         public static event System.Action BeforeStep;
 
@@ -124,6 +132,8 @@ namespace FrogSmashers.Net.Sim
                 PaceBias = 0;
                 for (int i = 0; i < extra; i++)
                 {
+                    if (MayStep != null && !MayStep())
+                        break;
                     BeforeStep?.Invoke();
                     Step();
                 }
@@ -137,6 +147,12 @@ namespace FrogSmashers.Net.Sim
             while (accumulator >= SimClock.TickDt
                 && steps < maxTicksPerFrame)
             {
+                if (MayStep != null && !MayStep())
+                {
+                    accumulator = Mathf.Min(accumulator,
+                        maxTicksPerFrame * SimClock.TickDt);
+                    return;
+                }
                 accumulator -= SimClock.TickDt;
                 steps++;
                 BeforeStep?.Invoke();

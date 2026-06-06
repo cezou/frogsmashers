@@ -45,9 +45,25 @@ namespace FrogSmashers.Editor
             BuildSummary summary = report.summary;
 
             if (summary.result == BuildResult.Succeeded)
+            {
+                WriteLaunchScript(outputDir);
                 Log($"Build {versionFolder} succeeded. Size: {summary.totalSize / (1024 * 1024)} MB. Time: {summary.totalTime}");
+            }
             else
                 Log($"Build {versionFolder} FAILED. Result: {summary.result}");
+        }
+
+        /// <summary>
+        /// Drops a Launch.bat next to the exe that writes player.log
+        /// in the build folder itself, so a build copied to a USB key
+        /// or another PC keeps its log alongside it.
+        /// </summary>
+        static void WriteLaunchScript(string outputDir)
+        {
+            string bat = "@echo off\r\n"
+                + $"start \"\" \"%~dp0{ExeName}\""
+                + " -logFile \"%~dp0player.log\"\r\n";
+            File.WriteAllText(Path.Combine(outputDir, "Launch.bat"), bat);
         }
 
         static int ResolveNextVersion(string baseDir)

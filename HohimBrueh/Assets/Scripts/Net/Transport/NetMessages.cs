@@ -28,8 +28,11 @@ namespace FrogSmashers.Net.Transport
         const string welcomeMsg = "FSWelcome";
         const string lobbyReadyMsg = "FSLobbyReady";
 
-        /// <summary>Redundant input frames per packet.</summary>
-        public const int InputWindow = 8;
+        /// <summary>Max resend window per slot in one input packet.</summary>
+        public const int MaxInputWindow = 64;
+
+        /// <summary>Slots serialized in every input packet's ack block.</summary>
+        public const int AckSlots = 4;
 
         /// <summary>
         /// Session generation, bumped at every scene transition; sim
@@ -41,6 +44,10 @@ namespace FrogSmashers.Net.Transport
 
         /// <summary>Raised for every input frame received.</summary>
         public static event Action<int, uint, ushort> InputReceived;
+
+        /// <summary>Raised per slot with the sender's contiguous
+        /// confirmed tick: (senderClientId, slot, ackTick).</summary>
+        public static event Action<ulong, int, uint> InputAckReceived;
 
         /// <summary>Raised on clients: (seed, slot, playerCount, level).</summary>
         public static event Action<ulong, int, int, int> MatchStartReceived;
@@ -87,27 +94,31 @@ namespace FrogSmashers.Net.Transport
                 return;
             var messaging =
                 NetworkManager.Singleton.CustomMessagingManager;
-            messaging.RegisterNamedMessageHandler(inputMsg, OnInputMsg);
-            messaging.RegisterNamedMessageHandler(
-                matchStartMsg, OnMatchStartMsg);
-            messaging.RegisterNamedMessageHandler(readyMsg, OnReadyMsg);
-            messaging.RegisterNamedMessageHandler(goMsg, OnGoMsg);
-            messaging.RegisterNamedMessageHandler(hashMsg, OnHashMsg);
-            messaging.RegisterNamedMessageHandler(
-                snapRequestMsg, OnSnapRequestMsg);
-            messaging.RegisterNamedMessageHandler(
-                snapshotMsg, OnSnapshotMsg);
-            messaging.RegisterNamedMessageHandler(
-                lobbyHelloMsg, OnLobbyHelloMsg);
-            messaging.RegisterNamedMessageHandler(
-                addPlayerMsg, OnAddPlayerMsg);
-            messaging.RegisterNamedMessageHandler(
-                removePlayerMsg, OnRemovePlayerMsg);
-            messaging.RegisterNamedMessageHandler(rosterMsg, OnRosterMsg);
-            messaging.RegisterNamedMessageHandler(
-                welcomeMsg, OnWelcomeMsg);
-            messaging.RegisterNamedMessageHandler(
-                lobbyReadyMsg, OnLobbyReadyMsg);
+            RegisterMaybeSimulated(
+                messaging, inputMsg, OnInputMsg, true);
+            RegisterMaybeSimulated(
+                messaging, matchStartMsg, OnMatchStartMsg, false);
+            RegisterMaybeSimulated(
+                messaging, readyMsg, OnReadyMsg, false);
+            RegisterMaybeSimulated(messaging, goMsg, OnGoMsg, false);
+            RegisterMaybeSimulated(
+                messaging, hashMsg, OnHashMsg, false);
+            RegisterMaybeSimulated(
+                messaging, snapRequestMsg, OnSnapRequestMsg, false);
+            RegisterMaybeSimulated(
+                messaging, snapshotMsg, OnSnapshotMsg, false);
+            RegisterMaybeSimulated(
+                messaging, lobbyHelloMsg, OnLobbyHelloMsg, false);
+            RegisterMaybeSimulated(
+                messaging, addPlayerMsg, OnAddPlayerMsg, false);
+            RegisterMaybeSimulated(
+                messaging, removePlayerMsg, OnRemovePlayerMsg, false);
+            RegisterMaybeSimulated(
+                messaging, rosterMsg, OnRosterMsg, false);
+            RegisterMaybeSimulated(
+                messaging, welcomeMsg, OnWelcomeMsg, false);
+            RegisterMaybeSimulated(
+                messaging, lobbyReadyMsg, OnLobbyReadyMsg, false);
             registered = true;
         }
 
@@ -134,6 +145,27 @@ namespace FrogSmashers.Net.Transport
                 messaging.UnregisterNamedMessageHandler(welcomeMsg);
                 messaging.UnregisterNamedMessageHandler(lobbyReadyMsg);
             }
+            NetSimulator.Reset();
+        }
+
+        /// <summary>
+        /// Registers the handler directly, or behind the simulator's
+        /// delay queue when network conditions are simulated. Only
+        /// unreliable messages may be dropped.
+        /// </summary>
+        static void RegisterMaybeSimulated(
+            CustomMessagingManager messaging, string name,
+            CustomMessagingManager.HandleNamedMessageDelegate handler,
+            bool droppable)
+        {
+            if (!NetSimulator.Enabled)
+            {
+                messaging.RegisterNamedMessageHandler(name, handler);
+                return;
+            }
+            messaging.RegisterNamedMessageHandler(name,
+                (sender, reader) => NetSimulator.Enqueue(
+                    sender, reader, handler, droppable));
         }
 
         /// <summary>Client → host: toggle my ready flag (reliable).</summary>
@@ -275,23 +307,30 @@ namespace FrogSmashers.Net.Transport
         }
 
         /// <summary>
-        /// Sends one slot's inputs for ticks
-        /// [lastTick - count + 1, lastTick] to a peer (unreliable;
-        /// redundancy covers losses).
+        /// Sends every slot window in the batch plus the sender's
+        /// per-slot resend acks to a peer (unreliable; the ack-driven
+        /// windows retransmit anything not yet acknowledged).
         /// </summary>
-        public static void SendInputs(
-            ulong targetClientId, int slot, uint lastTick,
-            ushort[] inputs, int count)
+        public static void SendInputBatch(
+            ulong targetClientId, InputBatch batch)
         {
-            int bytes = 9 + count * 2;
+            int bytes = 2 + (AckSlots * 4);
+            for (int i = 0; i < batch.SlotCount; i++)
+                bytes += 6 + (batch.Counts[i] * 2);
             using var writer = new FastBufferWriter(
                 bytes, Allocator.Temp);
             writer.WriteValueSafe(CurrentEpoch);
-            writer.WriteValueSafe((byte)slot);
-            writer.WriteValueSafe(lastTick);
-            writer.WriteValueSafe((byte)count);
-            for (int i = 0; i < count; i++)
-                writer.WriteValueSafe(inputs[i]);
+            for (int s = 0; s < AckSlots; s++)
+                writer.WriteValueSafe(batch.Acks[s]);
+            writer.WriteValueSafe((byte)batch.SlotCount);
+            for (int i = 0; i < batch.SlotCount; i++)
+            {
+                writer.WriteValueSafe(batch.Slots[i]);
+                writer.WriteValueSafe(batch.LastTicks[i]);
+                writer.WriteValueSafe(batch.Counts[i]);
+                for (int j = 0; j < batch.Counts[i]; j++)
+                    writer.WriteValueSafe(batch.Inputs[i][j]);
+            }
             NetworkManager.Singleton.CustomMessagingManager
                 .SendNamedMessage(inputMsg, targetClientId, writer,
                     NetworkDelivery.Unreliable);
@@ -303,14 +342,24 @@ namespace FrogSmashers.Net.Transport
             reader.ReadValueSafe(out byte epoch);
             if (epoch != CurrentEpoch)
                 return;
-            reader.ReadValueSafe(out byte slot);
-            reader.ReadValueSafe(out uint lastTick);
-            reader.ReadValueSafe(out byte count);
-            uint firstTick = lastTick - (uint)(count - 1);
-            for (int i = 0; i < count; i++)
+            for (int s = 0; s < AckSlots; s++)
             {
-                reader.ReadValueSafe(out ushort input);
-                InputReceived?.Invoke(slot, firstTick + (uint)i, input);
+                reader.ReadValueSafe(out uint ack);
+                InputAckReceived?.Invoke(senderClientId, s, ack);
+            }
+            reader.ReadValueSafe(out byte slotCount);
+            for (int i = 0; i < slotCount; i++)
+            {
+                reader.ReadValueSafe(out byte slot);
+                reader.ReadValueSafe(out uint lastTick);
+                reader.ReadValueSafe(out byte count);
+                uint firstTick = lastTick - (uint)(count - 1);
+                for (int j = 0; j < count; j++)
+                {
+                    reader.ReadValueSafe(out ushort input);
+                    InputReceived?.Invoke(
+                        slot, firstTick + (uint)j, input);
+                }
             }
         }
 

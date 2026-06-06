@@ -17,8 +17,13 @@ namespace FrogSmashers.Net.Rollback
     /// </summary>
     public class AuthoritySync : ISimTickable
     {
-        const uint hashInterval = 30;
+        const uint defaultHashInterval = 30;
         const int hashRing = 512;
+
+        static readonly uint hashInterval = ReadHashInterval();
+        static readonly uint dumpTick = ReadUintArg("-dumpTick");
+
+        bool dumped;
 
         /// <summary>Sync driving the current online match.</summary>
         public static AuthoritySync Active { get; private set; }
@@ -90,10 +95,66 @@ namespace FrogSmashers.Net.Rollback
             hashTicks[tick % hashRing] = tick;
             if (SimulationDriver.IsResimulating)
                 return;
+            MaybeDumpTick();
             if (isHost)
                 BroadcastConfirmedHash();
             else
                 CompareReadyHashes();
+        }
+
+        /// <summary>
+        /// Desync forensics: with -dumpTick N, logs the final
+        /// (all-inputs-confirmed) snapshot of tick N on each peer so
+        /// the diverging field can be diffed across the two logs.
+        /// </summary>
+        void MaybeDumpTick()
+        {
+            if (dumpTick == 0 || dumped || SafeTick() < dumpTick)
+                return;
+            var snap = rollback.Snapshots.TryGet(dumpTick);
+            if (snap == null)
+                return;
+            dumped = true;
+            Debug.Log(DescribeSnapshot(snap));
+        }
+
+        static string DescribeSnapshot(MatchSnapshot s)
+        {
+            var sb = new System.Text.StringBuilder(1024);
+            sb.Append($"[AuthoritySync] Dump tick={s.Tick}")
+                .Append($" rng={s.RngState:X16} state={s.GameState}")
+                .Append($" flyDelay={s.FlySpawnDelay:R}")
+                .Append($" finish={s.FinishDelay:R}")
+                .Append($" hasFly={s.HasFly}");
+            if (s.HasFly)
+            {
+                sb.Append($" fly=({s.Fly.Position.x:R},")
+                    .Append($"{s.Fly.Position.y:R})")
+                    .Append($" flyVel=({s.Fly.Velocity.x:R},")
+                    .Append($"{s.Fly.Velocity.y:R})")
+                    .Append($" flyTgt=({s.Fly.TargetVelocity.x:R},")
+                    .Append($"{s.Fly.TargetVelocity.y:R})")
+                    .Append($" dirDelay={s.Fly.UpdateDirectionDelay:R}");
+            }
+            for (int i = 0; i < s.PlayerCount; i++)
+            {
+                ref var p = ref s.Players[i];
+                sb.Append($" | p{i} score={p.Score}")
+                    .Append($" spawn={p.SpawnDelay:R}")
+                    .Append($" hasChar={p.HasCharacter}");
+                if (!p.HasCharacter)
+                    continue;
+                ref var c = ref p.Character;
+                sb.Append($" pos=({c.Position.x:R},{c.Position.y:R})")
+                    .Append($" vel=({c.Velocity.x:R},{c.Velocity.y:R})")
+                    .Append($" st={c.State}/{c.AttackState}")
+                    .Append($"/{c.TongueState} hits={c.HitsTaken}")
+                    .Append($" face={c.FacingDir}")
+                    .Append($" tb={c.TimeBumpTimeLeft:R}")
+                    .Append($"@{c.TimeBumpTimeScale:R}")
+                    .Append($" tHit={c.TimeSinceHit:R}");
+            }
+            return sb.ToString();
         }
 
         uint SafeTick()
@@ -149,6 +210,26 @@ namespace FrogSmashers.Net.Rollback
             }
             foreach (var tick in done)
                 pendingHostHashes.Remove(tick);
+        }
+
+        static uint ReadHashInterval()
+        {
+            uint value = ReadUintArg("-hashInterval");
+            return value > 0 ? value : defaultHashInterval;
+        }
+
+        static uint ReadUintArg(string name)
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == name
+                    && uint.TryParse(args[i + 1], out uint value))
+                {
+                    return value;
+                }
+            }
+            return 0;
         }
 
         void RequestSnapshotOnce()

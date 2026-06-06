@@ -227,7 +227,7 @@ public class Character : MonoBehaviour, ISimTickable
 
     float timeSinceHit;
 
-    int terrainLayer, characterLayer, groundLayer, tongueLayer, flyLayer;
+    int terrainLayer, characterLayer, groundLayer, flyLayer;
 
     public bool RecoveringFromBounce
     {
@@ -243,7 +243,6 @@ public class Character : MonoBehaviour, ISimTickable
         terrainLayer = 1 << LayerMask.NameToLayer("Ground");
         groundLayer = terrainLayer | (1 << LayerMask.NameToLayer("OneWayPlatform"));
         characterLayer = 1 << LayerMask.NameToLayer("Character");
-        tongueLayer = 1 << LayerMask.NameToLayer("Tongue");
         flyLayer = 1 << LayerMask.NameToLayer("Fly");
     }
 
@@ -1480,6 +1479,27 @@ public class Character : MonoBehaviour, ISimTickable
 
     }
 
+    /// <summary>
+    /// Deterministic tongue-vs-tongue clash test computed from sim
+    /// state only. The TongueTip collider is positioned by the render
+    /// path (CharacterAnimator.LateUpdate), so a physics query against
+    /// it reads frame-dependent positions and desyncs online peers;
+    /// 1.5 = the old 1.0 query radius plus the tip collider radius.
+    /// </summary>
+    bool TongueClashesWith(Character chr, Vector2 myTip)
+    {
+        const float clashRangeSq = 1.5f * 1.5f;
+        if (chr == null || chr == this)
+            return false;
+        if (chr.state != CharacterState.Tounge)
+            return false;
+        if (chr.tongueState == TongueState.HitEnemyTongueStunned)
+            return false;
+        Vector2 tip = (Vector2)chr.transform.position
+            + chr.tongueOrigin + chr.tongueDir * chr.tongueDistance;
+        return (tip - myTip).sqrMagnitude <= clashRangeSq;
+    }
+
     void RunTongue()
     {
         if (tongueDelayLeft > 0f)
@@ -1536,25 +1556,25 @@ public class Character : MonoBehaviour, ISimTickable
                 if (tongueDistance > minimumTongueDistance)
                 {
                     bool hitTongue = false;
-                    var cols = Physics2D.OverlapCircleAll((Vector2)transform.position + tongueOrigin + tongueDir * tongueDistance, 1f, tongueLayer);
+                    Vector2 myTip = (Vector2)transform.position
+                        + tongueOrigin + tongueDir * tongueDistance;
+                    for (int i = 0;
+                        i < GameController.activePlayers.Count; i++)
                     {
-                        if (cols.Length > 0)
+                        var chr =
+                            GameController.activePlayers[i].character;
+                        if (TongueClashesWith(chr, myTip))
                         {
-                            foreach (var col in cols)
-                            {
-                                var chr = col.GetComponentInParent<Character>();
-                                if (chr != null && chr != this)
-                                {
-                                    tongueState = TongueState.RetractingHitEnemyTongue;
-                                    EffectsController.CreateTongueHitEffect(TongueTipPos, 0.2f);
-                                    hitTongue = true;
-                                }
-                            }
+                            tongueState =
+                                TongueState.RetractingHitEnemyTongue;
+                            EffectsController.CreateTongueHitEffect(
+                                TongueTipPos, 0.2f);
+                            hitTongue = true;
                         }
                     }
                     if (!hitTongue)
                     {
-                        cols = Physics2D.OverlapCircleAll((Vector2)transform.position + tongueOrigin + tongueDir * tongueDistance, 1f, characterLayer);
+                        var cols = Physics2D.OverlapCircleAll((Vector2)transform.position + tongueOrigin + tongueDir * tongueDistance, 1f, characterLayer);
                         {
                             if (cols.Length > 0)
                             {
