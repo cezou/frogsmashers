@@ -563,22 +563,26 @@ public class Character : MonoBehaviour, ISimTickable
 
             GameController.RegisterKill(lastHitByPlayer, player, hitsTaken);
 
-            if (lastHitByPlayer == null)
-                FreeLives.SoundController.PlaySoundEffect("KnockoutSuicide", 0.45f, transform.position);
-            else if (hitsTaken <= 1)
-                FreeLives.SoundController.PlaySoundEffect("Knockout1", 0.55f, transform.position);
-            else if (hitsTaken <= 3)
-                FreeLives.SoundController.PlaySoundEffect("Knockout2", 0.65f, transform.position);
-            else
-                FreeLives.SoundController.PlaySoundEffect("Knockout3", 0.75f, transform.position);
+            if (!SimulationDriver.IsResimulating)
+            {
+                if (lastHitByPlayer == null)
+                    FreeLives.SoundController.PlaySoundEffect("KnockoutSuicide", 0.45f, transform.position);
+                else if (hitsTaken <= 1)
+                    FreeLives.SoundController.PlaySoundEffect("Knockout1", 0.55f, transform.position);
+                else if (hitsTaken <= 3)
+                    FreeLives.SoundController.PlaySoundEffect("Knockout2", 0.65f, transform.position);
+                else
+                    FreeLives.SoundController.PlaySoundEffect("Knockout3", 0.75f, transform.position);
 
-            if (lastHitByPlayer != null)
-                EffectsController.CreateSideScorePlum(transform.position, killedOnSide, hitsTaken == 0 ? 1 : hitsTaken, lastHitByPlayer.color);
-            else
-                EffectsController.CreateSideScorePlum(transform.position, killedOnSide, -1, player.color);
+                if (lastHitByPlayer != null)
+                    EffectsController.CreateSideScorePlum(transform.position, killedOnSide, hitsTaken == 0 ? 1 : hitsTaken, lastHitByPlayer.color);
+                else
+                    EffectsController.CreateSideScorePlum(transform.position, killedOnSide, -1, player.color);
+            }
             if (transform.position.y > Terrain.TopKillPoint)
             {
-                EffectsController.CreateKnockedUpEffect(GetComponent<CharacterAnimator>());
+                if (!SimulationDriver.IsResimulating)
+                    EffectsController.CreateKnockedUpEffect(GetComponent<CharacterAnimator>());
                 if (player != null)
                     player.spawnDelay = 3f;
 
