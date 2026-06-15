@@ -50,8 +50,16 @@ namespace FrogSmashers.Net
             "1BusStop",
             "2DownSmash",
             "3Moon",
+            "4FinalFrogstination",
             "5Skyline",
+            "6Finale",
         };
+
+        /// <summary>Sentinel level meaning "match over, leave to menu".</summary>
+        const int matchOverLevel = 255;
+
+        /// <summary>Round wins per slot, persisted across level loads.</summary>
+        static readonly int[] matchWinsBySlot = new int[maxPlayers];
 
         static readonly Color[] slotColors =
         {
@@ -271,8 +279,66 @@ namespace FrogSmashers.Net
                 return;
             }
             transitionPending = true;
-            int next = (currentLevel + 1) % matchLevels.Length;
-            TransitionTo(next, (ulong)System.DateTime.Now.Ticks);
+            CreditRoundWinner();
+            int remaining = matchLevels.Length - (currentLevel + 1);
+            if (remaining <= 0 || MatchClinched(remaining))
+            {
+                EndMatch();
+                return;
+            }
+            TransitionTo(currentLevel + 1,
+                (ulong)System.DateTime.Now.Ticks);
+        }
+
+        /// <summary>Credits the round winner's slot toward the match.</summary>
+        static void CreditRoundWinner()
+        {
+            var winner = GameController.GetWinningPlayer();
+            if (winner == null)
+                return;
+            int slot = winner.sortPriority;
+            if (slot >= 0 && slot < matchWinsBySlot.Length)
+                matchWinsBySlot[slot]++;
+        }
+
+        /// <summary>
+        /// True when the leader's round wins can no longer be matched by
+        /// anyone else, even if they took every remaining round.
+        /// </summary>
+        static bool MatchClinched(int remaining)
+        {
+            int leader = 0;
+            int second = 0;
+            for (int i = 0; i < matchWinsBySlot.Length; i++)
+            {
+                int w = matchWinsBySlot[i];
+                if (w > leader)
+                {
+                    second = leader;
+                    leader = w;
+                }
+                else if (w > second)
+                {
+                    second = w;
+                }
+            }
+            return leader > second + remaining;
+        }
+
+        /// <summary>Tells every client to leave, then leaves locally.</summary>
+        static void EndMatch()
+        {
+            var manager = NetworkManager.Singleton;
+            for (int i = 0; i < roster.Count; i++)
+            {
+                var entry = roster[i];
+                if (entry.ClientId != manager.LocalClientId)
+                {
+                    NetMessages.SendMatchStart(entry.ClientId, Seed,
+                        entry.Slot, roster.Count, matchOverLevel);
+                }
+            }
+            LeaveLocal();
         }
 
         /// <summary>Per-frame lobby logic, pumped by the overlay.</summary>
@@ -381,6 +447,9 @@ namespace FrogSmashers.Net
 
         static void TransitionTo(int level, ulong seed)
         {
+            if (level == 0)
+                System.Array.Clear(matchWinsBySlot, 0,
+                    matchWinsBySlot.Length);
             currentLevel = level;
             Seed = seed;
             NetMessages.CurrentEpoch++;
@@ -401,6 +470,11 @@ namespace FrogSmashers.Net
         static void OnMatchStart(
             ulong seed, int slot, int playerCount, int level)
         {
+            if (level == matchOverLevel)
+            {
+                LeaveLocal();
+                return;
+            }
             Seed = seed;
             LocalSlot = slot;
             currentLevel = level;

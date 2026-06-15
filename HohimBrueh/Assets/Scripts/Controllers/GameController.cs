@@ -468,6 +468,43 @@ public class GameController : MonoBehaviour, ISimTickable
         return h;
     }
 
+    /// <summary>
+    /// Plays the round-win sting and labels once the RoundFinished
+    /// state is confirmed (online) or immediately (offline). Gating on
+    /// a confirmed tick stops a mispredicted KO from flashing a false
+    /// victory that the rollback later reverts.
+    /// </summary>
+    void PresentRoundWinIfReady()
+    {
+        if (state != GameState.RoundFinished)
+        {
+            roundWinPresented = false;
+            return;
+        }
+        if (roundWinPresented)
+            return;
+        if (FrogSmashers.Net.OnlineMatch.Active
+            && FrogSmashers.Net.Rollback.RollbackManager.Active != null)
+        {
+            if (SimulationDriver.IsResimulating)
+                return;
+            if (FrogSmashers.Net.OnlineMatch.SafeTick() < roundFinishedTick)
+                return;
+        }
+        roundWinPresented = true;
+        SoundController.PlaySoundEffect("VictorySting", 0.5f);
+        SoundController.StopMusic();
+        if (winningPlayer != null)
+        {
+            var display = GetPlayerScoreDisplay(winningPlayer);
+            if (display != null)
+                display.TemorarilyDisplay("WINNER ! ! !", 5f);
+            if (winningPlayer.character != null)
+                winningPlayer.character.GetComponent<ScorePlum>()
+                    .ShowText("WIN!", 5f);
+        }
+    }
+
     void TickRoundFinished(float dt)
     {
         for (int i = 0; i < activePlayers.Count; i++)
@@ -497,6 +534,8 @@ public class GameController : MonoBehaviour, ISimTickable
             UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenu");
             return;
         }
+
+        PresentRoundWinIfReady();
 
         if (state == GameState.JoinScreen)
         {
@@ -763,6 +802,8 @@ public class GameController : MonoBehaviour, ISimTickable
     }
 
     Player winningPlayer;
+    uint roundFinishedTick;
+    bool roundWinPresented;
 
     public static Player lastWinningPlayer { get; private set; }
     public static bool HasInstance { get { return instance != null; } }
@@ -838,9 +879,9 @@ public class GameController : MonoBehaviour, ISimTickable
 
             if (wonRound)
             {
-                SoundController.PlaySoundEffect("VictorySting", 0.5f);
-                SoundController.StopMusic();
                 instance.state = GameState.RoundFinished;
+                instance.roundFinishedTick = SimClock.CurrentTick;
+                instance.roundWinPresented = false;
             }
             return;
         }
@@ -876,24 +917,20 @@ public class GameController : MonoBehaviour, ISimTickable
             }
             if (wonRound)
             {
-                SoundController.PlaySoundEffect("VictorySting", 0.5f);
-                SoundController.StopMusic();
                 instance.state = GameState.RoundFinished;
-                var winnerDisplay = instance.GetPlayerScoreDisplay(gotPoint);
-                if (winnerDisplay != null)
-                    winnerDisplay.TemorarilyDisplay("WINNER ! ! !", 5f);
-                if (gotPoint.character != null)
-                    gotPoint.character.GetComponent<ScorePlum>().ShowText("WIN!", 5f);
                 instance.winningPlayer = gotPoint;
                 lastWinningPlayer = gotPoint;
+                instance.roundFinishedTick = SimClock.CurrentTick;
+                instance.roundWinPresented = false;
             }
-            else
+            else if (!SimulationDriver.IsResimulating)
             {
                 var display = instance.GetPlayerScoreDisplay(gotPoint);
                 if (display != null)
                     display.TemorarilyDisplay("+" + hits.ToString());
                 if (gotPoint.character != null)
-                    gotPoint.character.GetComponent<ScorePlum>().ShowText("+" + hits.ToString());
+                    gotPoint.character.GetComponent<ScorePlum>()
+                        .ShowText("+" + hits.ToString());
             }
 
 
