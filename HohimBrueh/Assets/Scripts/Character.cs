@@ -387,6 +387,12 @@ public class Character : MonoBehaviour, ISimTickable
         IngestedFly = s.IngestedFly;
         ingestingFly = s.HasIngestingFly
             ? GameController.ActiveFlyInstance : null;
+        if (s.HasIngestingFly && ingestingFly == null)
+        {
+            IngestedFly = false;
+            if (tongueState == TongueState.RetractingHitFly)
+                tongueState = TongueState.Retracting;
+        }
         RestoreInput(in s.Input);
     }
 
@@ -587,7 +593,7 @@ public class Character : MonoBehaviour, ISimTickable
                     player.spawnDelay = 3f;
 
             }
-            if (IngestedFly)
+            if (IngestedFly && ingestingFly != null)
             {
                 ingestingFly.Release();
                 GameController.PoolFly(ingestingFly);
@@ -1074,9 +1080,12 @@ public class Character : MonoBehaviour, ISimTickable
         if (IngestedFly)
         {
             IngestedFly = false;
-            ingestingFly.transform.position = Center;
-            ingestingFly.Release();
-            ingestingFly.gameObject.SetActive(true);
+            if (ingestingFly != null)
+            {
+                ingestingFly.transform.position = Center;
+                ingestingFly.Release();
+                ingestingFly.gameObject.SetActive(true);
+            }
         }
         if (ingestingFly != null)
         {
@@ -1670,19 +1679,26 @@ public class Character : MonoBehaviour, ISimTickable
         }
         else if (tongueState == TongueState.RetractingHitFly)
         {
-            tongueDistance -= tongueRetractSpeedMissed * t;
-            ingestingFly.transform.position = TongueTipPos;
-            if (tongueDistance <= 0f)
+            if (ingestingFly == null)
             {
-                if (wasBouncingBeforeTongue)
-                    StopBouncing();
+                tongueState = TongueState.Retracting;
+            }
+            else
+            {
+                tongueDistance -= tongueRetractSpeedMissed * t;
+                ingestingFly.transform.position = TongueTipPos;
+                if (tongueDistance <= 0f)
                 {
-                    SoundController.PlaySoundEffect("Burp", 0.5f, TongueTipPos);
-                    tongueState = TongueState.HitFlyBurping;
-                    tongueDelayLeft = 0.65f;
-                    IngestedFly = true;
-                    ingestingFly.Release();
-                    ingestingFly.gameObject.SetActive(false);
+                    if (wasBouncingBeforeTongue)
+                        StopBouncing();
+                    {
+                        SoundController.PlaySoundEffect("Burp", 0.5f, TongueTipPos);
+                        tongueState = TongueState.HitFlyBurping;
+                        tongueDelayLeft = 0.65f;
+                        IngestedFly = true;
+                        ingestingFly.Release();
+                        ingestingFly.gameObject.SetActive(false);
+                    }
                 }
             }
         }
