@@ -72,6 +72,7 @@ crashlytics-build.properties
 /AGENTS.md
 /PLANGLOBAL.md
 /PHASE*.md
+/PLANSTEAM.md
 
 # Local gate/test logs
 /*.log
