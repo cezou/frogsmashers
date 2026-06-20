@@ -54,15 +54,20 @@ namespace FrogSmashers.Editor
         }
 
         /// <summary>
-        /// Drops a Launch.bat next to the exe that writes player.log
-        /// in the build folder itself, so a build copied to a USB key
-        /// or another PC keeps its log alongside it.
+        /// Drops a Launch.bat next to the exe that writes a timestamped
+        /// log under "&lt;drive&gt;\logs" (the USB key root when run from
+        /// one), so successive runs on the second PC are all preserved
+        /// for later forensics instead of overwriting a single file.
         /// </summary>
         static void WriteLaunchScript(string outputDir)
         {
+            string stamp = "%date:~-4%%date:~3,2%%date:~0,2%"
+                + "-%time:~0,2%%time:~3,2%";
             string bat = "@echo off\r\n"
+                + "set LOGDIR=%~d0\\logs\r\n"
+                + "if not exist \"%LOGDIR%\" mkdir \"%LOGDIR%\"\r\n"
                 + $"start \"\" \"%~dp0{ExeName}\""
-                + " -logFile \"%~dp0player.log\"\r\n";
+                + $" -logFile \"%LOGDIR%\\frogsmashers-{stamp}.log\"\r\n";
             File.WriteAllText(Path.Combine(outputDir, "Launch.bat"), bat);
         }
 
