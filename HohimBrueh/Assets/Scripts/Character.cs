@@ -662,31 +662,31 @@ public class Character : MonoBehaviour, ISimTickable
         if (!input.xButton && input.wasXButton && attackState == AttackState.Charging)
         {
             attackState = AttackState.Attacking;
-            SimFx.Play("BatSwing", 0.4f + attackChargeM * 0.4f, transform.position);
+            SoundController.PlaySoundEffect("BatSwing", 0.4f + attackChargeM * 0.4f, transform.position);
             if (attackChargeM > 0.25f || IngestedFly)
-                SimFx.Play("BatSwingVoice", 0.4f, transform.position);
+                SoundController.PlaySoundEffect("BatSwingVoice", 0.4f, transform.position);
             attackTimeLeft = attackTime;
             if (attackChargeM > 0.5f)
             {
                 if (attackDir == Vector2.left || attackDir == Vector2.right)
                 {
-                    SimFx.Spawn(() => EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 3f + Vector3.up * 0.2f, attackDir));
+                    EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 3f + Vector3.up * 0.2f, attackDir);
                 }
                 else if (attackDir == Vector2.up)
                 {
-                    SimFx.Spawn(() => EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 3.75f, attackDir));
+                    EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 3.75f, attackDir);
                 }
                 else if (attackDir == Vector2.down)
                 {
-                    SimFx.Spawn(() => EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 2.75f, attackDir));
+                    EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 2.75f, attackDir);
                 }
                 else if (attackDir.y > 0f)
                 {
-                    SimFx.Spawn(() => EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 2.75f, attackDir));
+                    EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 2.75f, attackDir);
                 }
                 else
                 {
-                    SimFx.Spawn(() => EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 2.75f, attackDir));
+                    EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 2.75f, attackDir);
                 }
             }
 
@@ -748,9 +748,9 @@ public class Character : MonoBehaviour, ISimTickable
         if (((side == EffectsController.Side.Left || side == EffectsController.Side.Right) && Mathf.Abs(velocity.x) > 5f)
             || ((side == EffectsController.Side.Bottom || side == EffectsController.Side.Top) && Mathf.Abs(velocity.y) > 5f))
         {
-            SimFx.Spawn(() => EffectsController.CreateBouncePuff(transform.position + (Vector3)velocityT, side));
-            SimFx.Play("FrogBounce", 0.5f, transform.position);
-            SimFx.Play("FrogBounceVoice", 0.4f, transform.position);
+            EffectsController.CreateBouncePuff(transform.position + (Vector3)velocityT, side);
+            SoundController.PlaySoundEffect("FrogBounce", 0.5f, transform.position);
+            SoundController.PlaySoundEffect("FrogBounceVoice", 0.4f, transform.position);
         }
         if (state == CharacterState.Tounge)
         {
@@ -952,13 +952,13 @@ public class Character : MonoBehaviour, ISimTickable
 
         if (OnGround && !wasOnGround)
         {
-            SimFx.Play("Land", 0.4f, transform.position);
+            SoundController.PlaySoundEffect("Land", 0.4f, transform.position);
             jumpCooldownLeft = 0.1f;
 
         }
         if (WallSliding && !wasWallSlide)
         {
-            SimFx.Play("Land", 0.4f, transform.position);
+            SoundController.PlaySoundEffect("Land", 0.4f, transform.position);
             jumpCooldownLeft = 0.1f;
         }
 
@@ -1032,7 +1032,7 @@ public class Character : MonoBehaviour, ISimTickable
         skidRecoverTimeLeft = 0.5f;
         velocity = hitDir.normalized * totalPower;
         timeSinceHit = 0f;
-        SimFx.Play("TongueCollide", 0.5f, transform.position);
+        SoundController.PlaySoundEffect("TongueCollide", 0.5f, transform.position);
         TimeBump(0.75f, 0f);
         attacker.TimeBump(0.5f, 0f);
         //TimeController.TimeBumpCharacters(transform.position, hitsTaken, 15f, true);
@@ -1067,10 +1067,10 @@ public class Character : MonoBehaviour, ISimTickable
         TimeBump(bouncer.hitsTaken, 0f);
         bouncer.TimeBump(bouncer.hitsTaken, 0f);
         //EffectsController.CreateHitParticles(transform.position + Vector3.up * height * 0.5f, hitDir, totalPower,(int) (totalPower / 5f));
-        SimFx.Play("CharacterCollision", 0.5f, transform.position);
+        SoundController.PlaySoundEffect("CharacterCollision", 0.5f, transform.position);
         TimeController.TimeBumpCharacters(transform.position, bouncer.hitsTaken, 15f, true);
-        SimFx.Spawn(() => EffectsController.CreateLocalizedShake(transform.position + Vector3.up * height * 0.5f, velocity, velocity.magnitude, timeBumpTimeLeft));
-        SimFx.Spawn(() => EffectsController.CreateHitEffect((Center + bouncer.Center) * 0.5f, timeBumpTimeLeft, false));
+        EffectsController.CreateLocalizedShake(transform.position + Vector3.up * height * 0.5f, velocity, velocity.magnitude, timeBumpTimeLeft);
+        EffectsController.CreateHitEffect((Center + bouncer.Center) * 0.5f, timeBumpTimeLeft, false);
     }
 
     public void GetHit(Vector2 hitDir, float power, Character attacker)
@@ -1114,14 +1114,14 @@ public class Character : MonoBehaviour, ISimTickable
         TimeBump(hitsTaken + power, 0f);
         attacker.TimeBump(hitsTaken + power, 0f);
         //EffectsController.CreateHitParticles(transform.position + Vector3.up * height * 0.5f, hitDir, totalPower,(int) (totalPower / 5f));
-        SimFx.Play("BatHit" + Mathf.Clamp(hitsTaken, 1, 5).ToString(), 0.5f, transform.position);
-        SimFx.Play("BatHitVoice" + Mathf.Clamp(hitsTaken, 1, 5).ToString(), 0.5f, transform.position);
+        SoundController.PlaySoundEffect("BatHit" + Mathf.Clamp(hitsTaken, 1, 5).ToString(), 0.5f, transform.position);
+        SoundController.PlaySoundEffect("BatHitVoice" + Mathf.Clamp(hitsTaken, 1, 5).ToString(), 0.5f, transform.position);
         TimeController.TimeBumpCharacters(transform.position, hitsTaken + power, 15f, true);
-        SimFx.Spawn(() => EffectsController.CreateLocalizedShake(transform.position + Vector3.up * height * 0.5f, velocity, velocity.magnitude, timeBumpTimeLeft));
-        SimFx.Spawn(() => EffectsController.CreateHitEffect(transform.position + Vector3.up * height * 0.5f, timeBumpTimeLeft, power >= 1f));
+        EffectsController.CreateLocalizedShake(transform.position + Vector3.up * height * 0.5f, velocity, velocity.magnitude, timeBumpTimeLeft);
+        EffectsController.CreateHitEffect(transform.position + Vector3.up * height * 0.5f, timeBumpTimeLeft, power >= 1f);
         if (power >= 1f)
         {
-            SimFx.Spawn(() => EffectsController.ShakeCamera(hitDir, hitsTaken * 0.75f));
+            EffectsController.ShakeCamera(hitDir, hitsTaken * 0.75f);
         }
     }
 
@@ -1368,7 +1368,7 @@ public class Character : MonoBehaviour, ISimTickable
                 {
                     if (velocity.x < maxRunSpeed * 0.9f)
                     {
-                        SimFx.Spawn(() => EffectsController.CreateTurnAroundPuff(transform.position, 1f));
+                        EffectsController.CreateTurnAroundPuff(transform.position, 1f);
                     }
                     velocity.x = 0f;
 
@@ -1391,7 +1391,7 @@ public class Character : MonoBehaviour, ISimTickable
                 {
                     if (velocity.x > -maxRunSpeed * 0.9f)
                     {
-                        SimFx.Spawn(() => EffectsController.CreateTurnAroundPuff(transform.position, -1f));
+                        EffectsController.CreateTurnAroundPuff(transform.position, -1f);
                     }
                     velocity.x = 0f;
                 }
@@ -1431,7 +1431,7 @@ public class Character : MonoBehaviour, ISimTickable
                 if (attackState == AttackState.Idle)
                 {
                     attackState = AttackState.Charging;
-                    SimFx.Play("BatChargeUp", 0.5f, transform.position);
+                    SoundController.PlaySoundEffect("BatChargeUp", 0.5f, transform.position);
                     attackChargeCounter = 0f;
                 }
             }
@@ -1476,11 +1476,11 @@ public class Character : MonoBehaviour, ISimTickable
 
 
                 //Debug.Break();
-                SimFx.Play("Jump", 0.4f, transform.position);
+                SoundController.PlaySoundEffect("Jump", 0.4f, transform.position);
                 if (WallSliding)
-                    SimFx.Spawn(() => EffectsController.CreateJumpPuffStraight(transform.position, WallSlideSide));
+                    EffectsController.CreateJumpPuffStraight(transform.position, WallSlideSide);
                 else
-                    SimFx.Spawn(() => EffectsController.CreateJumpPuffStraight(transform.position, EffectsController.Side.Bottom));
+                    EffectsController.CreateJumpPuffStraight(transform.position, EffectsController.Side.Bottom);
 
             }
             else if (jumpGraceTimeLeft > 0f) // && (velocity.y > 0f || !input.wasAButton))
@@ -1551,7 +1551,7 @@ public class Character : MonoBehaviour, ISimTickable
                 {
                     tongueState = TongueState.RetractingHitFly;
                     ingestingFly = flyComp;
-                    SimFx.Play("TongueCollideSurface", 0.5f, TongueTipPos);
+                    SoundController.PlaySoundEffect("TongueCollideSurface", 0.5f, TongueTipPos);
                 }
             }
             else
@@ -1560,7 +1560,7 @@ public class Character : MonoBehaviour, ISimTickable
                 if (tongueDistance > minimumTongueDistance)
                 {
                     tongueState = TongueState.AttachedToTerrain;
-                    SimFx.Play("TongueCollideSurface", 0.5f, TongueTipPos);
+                    SoundController.PlaySoundEffect("TongueCollideSurface", 0.5f, TongueTipPos);
                 }
 
             }
@@ -1580,9 +1580,8 @@ public class Character : MonoBehaviour, ISimTickable
                         {
                             tongueState =
                                 TongueState.RetractingHitEnemyTongue;
-                            SimFx.Spawn(() =>
-                                EffectsController.CreateTongueHitEffect(
-                                    TongueTipPos, 0.2f));
+                            EffectsController.CreateTongueHitEffect(
+                                TongueTipPos, 0.2f);
                             hitTongue = true;
                         }
                     }
@@ -1601,7 +1600,7 @@ public class Character : MonoBehaviour, ISimTickable
                                         {
                                             chr.GetTongueHit(-tongueDir, this);
                                             tongueState = TongueState.RetractingHitEnemy;
-                                            SimFx.Spawn(() => EffectsController.CreateTongueHitEffect(TongueTipPos, 0.2f));
+                                            EffectsController.CreateTongueHitEffect(TongueTipPos, 0.2f);
                                         }
 
                                     }
@@ -1693,7 +1692,7 @@ public class Character : MonoBehaviour, ISimTickable
                     if (wasBouncingBeforeTongue)
                         StopBouncing();
                     {
-                        SimFx.Play("Burp", 0.5f, TongueTipPos);
+                        SoundController.PlaySoundEffect("Burp", 0.5f, TongueTipPos);
                         tongueState = TongueState.HitFlyBurping;
                         tongueDelayLeft = 0.65f;
                         IngestedFly = true;
@@ -1737,7 +1736,7 @@ public class Character : MonoBehaviour, ISimTickable
         tongueDistance = 0f;
         tongueState = TongueState.Extending;
         tongueDelayLeft = tongueDelay;
-        SimFx.Play("TongueLaunch", 0.5f, transform.position);
+        SoundController.PlaySoundEffect("TongueLaunch", 0.5f, transform.position);
         tongueDir = facingDir * Vector2.right;
         if (input.right)
             tongueDir = Vector2.right;
