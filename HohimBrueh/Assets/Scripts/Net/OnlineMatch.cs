@@ -130,6 +130,21 @@ namespace FrogSmashers.Net
         }
 
         /// <summary>
+        /// True while a slot still belongs to the active roster. A slot
+        /// drops out the instant its client disconnects, so the rollback
+        /// pace gate can stop waiting on inputs that will never arrive.
+        /// </summary>
+        public static bool IsSlotActive(int slot)
+        {
+            for (int i = 0; i < roster.Count; i++)
+            {
+                if (roster[i].Slot == slot)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Newest tick whose inputs are confirmed for every roster
         /// slot with no unconfirmed gap behind it (and below any
         /// pending misprediction). Gap-free matters: a dropped input

@@ -184,6 +184,8 @@ namespace FrogSmashers.Net.Rollback
             {
                 if (slot == localSlot)
                     continue;
+                if (!OnlineMatch.IsSlotActive(slot))
+                    continue;
                 uint contiguous =
                     rollback.Inputs.ContiguousConfirmedTick(slot);
                 if (contiguous == 0)
