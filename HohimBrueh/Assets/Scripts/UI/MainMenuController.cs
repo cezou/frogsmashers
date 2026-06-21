@@ -1,6 +1,8 @@
+using System.Collections;
 using System.Collections.Generic;
 using FrogSmashers.Net;
 using FrogSmashers.Net.Transport;
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -106,6 +108,7 @@ namespace FrogSmashers.UI
                 await NetSession.JoinByCodeAsync(entry.RelayCode);
                 OnlineMatch.JoinAsClient();
                 SetStatus("WAITING  FOR  THE  HOST . . .");
+                StartCoroutine(JoinWatchdog());
             }
             catch (System.Exception e)
             {
@@ -113,6 +116,30 @@ namespace FrogSmashers.UI
                 SetStatus("ERROR :  COULD  NOT  JOIN");
                 busy = false;
             }
+        }
+
+        /// <summary>
+        /// Bails out of a join that never connects (the lobby was a dead
+        /// entry whose host is gone): without this the client waits on
+        /// the host forever. Tears down through the normal leave path so
+        /// the menu becomes responsive again instead of hanging.
+        /// </summary>
+        IEnumerator JoinWatchdog()
+        {
+            float timeLeft = 10f;
+            var manager = NetworkManager.Singleton;
+            while (timeLeft > 0f && manager != null
+                && !manager.IsConnectedClient)
+            {
+                timeLeft -= Time.unscaledDeltaTime;
+                yield return null;
+            }
+            if (manager == null || manager.IsConnectedClient)
+                yield break;
+            Debug.LogWarning(
+                "[MainMenu] Join timed out, host unreachable");
+            SetStatus("HOST  UNREACHABLE");
+            OnlineMatch.LeaveLocal();
         }
 
         async void RefreshLobbies()
