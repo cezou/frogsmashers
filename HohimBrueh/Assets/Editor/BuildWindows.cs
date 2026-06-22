@@ -54,15 +54,21 @@ namespace FrogSmashers.Editor
         }
 
         /// <summary>
-        /// Drops a Launch.bat next to the exe that writes player.log
-        /// in the build folder itself, so a build copied to a USB key
-        /// or another PC keeps its log alongside it.
+        /// Drops a Launch.bat next to the exe that writes a timestamped
+        /// player log in the build folder itself (so a USB-key or other
+        /// PC keeps its logs alongside the exe) without overwriting the
+        /// previous run. The "%time: =0%" guard turns the leading space
+        /// of single-digit hours into a zero so the filename stays valid.
         /// </summary>
         static void WriteLaunchScript(string outputDir)
         {
             string bat = "@echo off\r\n"
+                + "setlocal\r\n"
+                + "set \"T=%time: =0%\"\r\n"
+                + "set \"STAMP=%date:~-4%%date:~3,2%%date:~0,2%"
+                + "-%T:~0,2%%T:~3,2%%T:~6,2%\"\r\n"
                 + $"start \"\" \"%~dp0{ExeName}\""
-                + " -logFile \"%~dp0player.log\"\r\n";
+                + " -logFile \"%~dp0player-%STAMP%.log\"\r\n";
             File.WriteAllText(Path.Combine(outputDir, "Launch.bat"), bat);
         }
 
