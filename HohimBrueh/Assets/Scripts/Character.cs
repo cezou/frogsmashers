@@ -40,6 +40,12 @@ public class Character : MonoBehaviour, ISimTickable
     [HideInInspector]
     public Player lastHitByPlayer;
 
+    /// <summary>Owner slot for SimFx de-dup keys (null-safe).</summary>
+    int FxSlot
+    {
+        get { return player != null ? player.sortPriority : 0; }
+    }
+
     public CharacterState state;
     public AttackState attackState;
 
@@ -662,31 +668,31 @@ public class Character : MonoBehaviour, ISimTickable
         if (!input.xButton && input.wasXButton && attackState == AttackState.Charging)
         {
             attackState = AttackState.Attacking;
-            SoundController.PlaySoundEffect("BatSwing", 0.4f + attackChargeM * 0.4f, transform.position);
+            SimFx.Play(FxSlot, "BatSwing", 0.4f + attackChargeM * 0.4f, transform.position);
             if (attackChargeM > 0.25f || IngestedFly)
-                SoundController.PlaySoundEffect("BatSwingVoice", 0.4f, transform.position);
+                SimFx.Play(FxSlot, "BatSwingVoice", 0.4f, transform.position);
             attackTimeLeft = attackTime;
             if (attackChargeM > 0.5f)
             {
                 if (attackDir == Vector2.left || attackDir == Vector2.right)
                 {
-                    EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 3f + Vector3.up * 0.2f, attackDir);
+                    SimFx.Spawn(FxSlot, () => EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 3f + Vector3.up * 0.2f, attackDir));
                 }
                 else if (attackDir == Vector2.up)
                 {
-                    EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 3.75f, attackDir);
+                    SimFx.Spawn(FxSlot, () => EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 3.75f, attackDir));
                 }
                 else if (attackDir == Vector2.down)
                 {
-                    EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 2.75f, attackDir);
+                    SimFx.Spawn(FxSlot, () => EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 2.75f, attackDir));
                 }
                 else if (attackDir.y > 0f)
                 {
-                    EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 2.75f, attackDir);
+                    SimFx.Spawn(FxSlot, () => EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 2.75f, attackDir));
                 }
                 else
                 {
-                    EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 2.75f, attackDir);
+                    SimFx.Spawn(FxSlot, () => EffectsController.CreateShingEffect(Center + (Vector3)attackDir * 2.75f, attackDir));
                 }
             }
 
@@ -748,9 +754,9 @@ public class Character : MonoBehaviour, ISimTickable
         if (((side == EffectsController.Side.Left || side == EffectsController.Side.Right) && Mathf.Abs(velocity.x) > 5f)
             || ((side == EffectsController.Side.Bottom || side == EffectsController.Side.Top) && Mathf.Abs(velocity.y) > 5f))
         {
-            EffectsController.CreateBouncePuff(transform.position + (Vector3)velocityT, side);
-            SoundController.PlaySoundEffect("FrogBounce", 0.5f, transform.position);
-            SoundController.PlaySoundEffect("FrogBounceVoice", 0.4f, transform.position);
+            SimFx.Spawn(FxSlot, () => EffectsController.CreateBouncePuff(transform.position + (Vector3)velocityT, side));
+            SimFx.Play(FxSlot, "FrogBounce", 0.5f, transform.position);
+            SimFx.Play(FxSlot, "FrogBounceVoice", 0.4f, transform.position);
         }
         if (state == CharacterState.Tounge)
         {
@@ -952,13 +958,13 @@ public class Character : MonoBehaviour, ISimTickable
 
         if (OnGround && !wasOnGround)
         {
-            SoundController.PlaySoundEffect("Land", 0.4f, transform.position);
+            SimFx.Play(FxSlot, "Land", 0.4f, transform.position);
             jumpCooldownLeft = 0.1f;
 
         }
         if (WallSliding && !wasWallSlide)
         {
-            SoundController.PlaySoundEffect("Land", 0.4f, transform.position);
+            SimFx.Play(FxSlot, "Land", 0.4f, transform.position);
             jumpCooldownLeft = 0.1f;
         }
 
@@ -1032,7 +1038,7 @@ public class Character : MonoBehaviour, ISimTickable
         skidRecoverTimeLeft = 0.5f;
         velocity = hitDir.normalized * totalPower;
         timeSinceHit = 0f;
-        SoundController.PlaySoundEffect("TongueCollide", 0.5f, transform.position);
+        SimFx.Play(FxSlot, "TongueCollide", 0.5f, transform.position);
         TimeBump(0.75f, 0f);
         attacker.TimeBump(0.5f, 0f);
         //TimeController.TimeBumpCharacters(transform.position, hitsTaken, 15f, true);
@@ -1067,10 +1073,10 @@ public class Character : MonoBehaviour, ISimTickable
         TimeBump(bouncer.hitsTaken, 0f);
         bouncer.TimeBump(bouncer.hitsTaken, 0f);
         //EffectsController.CreateHitParticles(transform.position + Vector3.up * height * 0.5f, hitDir, totalPower,(int) (totalPower / 5f));
-        SoundController.PlaySoundEffect("CharacterCollision", 0.5f, transform.position);
+        SimFx.Play(FxSlot, "CharacterCollision", 0.5f, transform.position);
         TimeController.TimeBumpCharacters(transform.position, bouncer.hitsTaken, 15f, true);
-        EffectsController.CreateLocalizedShake(transform.position + Vector3.up * height * 0.5f, velocity, velocity.magnitude, timeBumpTimeLeft);
-        EffectsController.CreateHitEffect((Center + bouncer.Center) * 0.5f, timeBumpTimeLeft, false);
+        SimFx.Spawn(FxSlot, () => EffectsController.CreateLocalizedShake(transform.position + Vector3.up * height * 0.5f, velocity, velocity.magnitude, timeBumpTimeLeft));
+        SimFx.Spawn(FxSlot, () => EffectsController.CreateHitEffect((Center + bouncer.Center) * 0.5f, timeBumpTimeLeft, false));
     }
 
     public void GetHit(Vector2 hitDir, float power, Character attacker)
@@ -1114,14 +1120,14 @@ public class Character : MonoBehaviour, ISimTickable
         TimeBump(hitsTaken + power, 0f);
         attacker.TimeBump(hitsTaken + power, 0f);
         //EffectsController.CreateHitParticles(transform.position + Vector3.up * height * 0.5f, hitDir, totalPower,(int) (totalPower / 5f));
-        SoundController.PlaySoundEffect("BatHit" + Mathf.Clamp(hitsTaken, 1, 5).ToString(), 0.5f, transform.position);
-        SoundController.PlaySoundEffect("BatHitVoice" + Mathf.Clamp(hitsTaken, 1, 5).ToString(), 0.5f, transform.position);
+        SimFx.Play(FxSlot, "BatHit" + Mathf.Clamp(hitsTaken, 1, 5).ToString(), 0.5f, transform.position);
+        SimFx.Play(FxSlot, "BatHitVoice" + Mathf.Clamp(hitsTaken, 1, 5).ToString(), 0.5f, transform.position);
         TimeController.TimeBumpCharacters(transform.position, hitsTaken + power, 15f, true);
-        EffectsController.CreateLocalizedShake(transform.position + Vector3.up * height * 0.5f, velocity, velocity.magnitude, timeBumpTimeLeft);
-        EffectsController.CreateHitEffect(transform.position + Vector3.up * height * 0.5f, timeBumpTimeLeft, power >= 1f);
+        SimFx.Spawn(FxSlot, () => EffectsController.CreateLocalizedShake(transform.position + Vector3.up * height * 0.5f, velocity, velocity.magnitude, timeBumpTimeLeft));
+        SimFx.Spawn(FxSlot, () => EffectsController.CreateHitEffect(transform.position + Vector3.up * height * 0.5f, timeBumpTimeLeft, power >= 1f));
         if (power >= 1f)
         {
-            EffectsController.ShakeCamera(hitDir, hitsTaken * 0.75f);
+            SimFx.Spawn(FxSlot, () => EffectsController.ShakeCamera(hitDir, hitsTaken * 0.75f));
         }
     }
 
@@ -1368,7 +1374,7 @@ public class Character : MonoBehaviour, ISimTickable
                 {
                     if (velocity.x < maxRunSpeed * 0.9f)
                     {
-                        EffectsController.CreateTurnAroundPuff(transform.position, 1f);
+                        SimFx.Spawn(FxSlot, () => EffectsController.CreateTurnAroundPuff(transform.position, 1f));
                     }
                     velocity.x = 0f;
 
@@ -1391,7 +1397,7 @@ public class Character : MonoBehaviour, ISimTickable
                 {
                     if (velocity.x > -maxRunSpeed * 0.9f)
                     {
-                        EffectsController.CreateTurnAroundPuff(transform.position, -1f);
+                        SimFx.Spawn(FxSlot, () => EffectsController.CreateTurnAroundPuff(transform.position, -1f));
                     }
                     velocity.x = 0f;
                 }
@@ -1431,7 +1437,7 @@ public class Character : MonoBehaviour, ISimTickable
                 if (attackState == AttackState.Idle)
                 {
                     attackState = AttackState.Charging;
-                    SoundController.PlaySoundEffect("BatChargeUp", 0.5f, transform.position);
+                    SimFx.Play(FxSlot, "BatChargeUp", 0.5f, transform.position);
                     attackChargeCounter = 0f;
                 }
             }
@@ -1476,11 +1482,11 @@ public class Character : MonoBehaviour, ISimTickable
 
 
                 //Debug.Break();
-                SoundController.PlaySoundEffect("Jump", 0.4f, transform.position);
+                SimFx.Play(FxSlot, "Jump", 0.4f, transform.position);
                 if (WallSliding)
-                    EffectsController.CreateJumpPuffStraight(transform.position, WallSlideSide);
+                    SimFx.Spawn(FxSlot, () => EffectsController.CreateJumpPuffStraight(transform.position, WallSlideSide));
                 else
-                    EffectsController.CreateJumpPuffStraight(transform.position, EffectsController.Side.Bottom);
+                    SimFx.Spawn(FxSlot, () => EffectsController.CreateJumpPuffStraight(transform.position, EffectsController.Side.Bottom));
 
             }
             else if (jumpGraceTimeLeft > 0f) // && (velocity.y > 0f || !input.wasAButton))
@@ -1551,7 +1557,7 @@ public class Character : MonoBehaviour, ISimTickable
                 {
                     tongueState = TongueState.RetractingHitFly;
                     ingestingFly = flyComp;
-                    SoundController.PlaySoundEffect("TongueCollideSurface", 0.5f, TongueTipPos);
+                    SimFx.Play(FxSlot, "TongueCollideSurface", 0.5f, TongueTipPos);
                 }
             }
             else
@@ -1560,7 +1566,7 @@ public class Character : MonoBehaviour, ISimTickable
                 if (tongueDistance > minimumTongueDistance)
                 {
                     tongueState = TongueState.AttachedToTerrain;
-                    SoundController.PlaySoundEffect("TongueCollideSurface", 0.5f, TongueTipPos);
+                    SimFx.Play(FxSlot, "TongueCollideSurface", 0.5f, TongueTipPos);
                 }
 
             }
@@ -1580,8 +1586,9 @@ public class Character : MonoBehaviour, ISimTickable
                         {
                             tongueState =
                                 TongueState.RetractingHitEnemyTongue;
-                            EffectsController.CreateTongueHitEffect(
-                                TongueTipPos, 0.2f);
+                            SimFx.Spawn(FxSlot, () =>
+                                EffectsController.CreateTongueHitEffect(
+                                    TongueTipPos, 0.2f));
                             hitTongue = true;
                         }
                     }
@@ -1600,7 +1607,7 @@ public class Character : MonoBehaviour, ISimTickable
                                         {
                                             chr.GetTongueHit(-tongueDir, this);
                                             tongueState = TongueState.RetractingHitEnemy;
-                                            EffectsController.CreateTongueHitEffect(TongueTipPos, 0.2f);
+                                            SimFx.Spawn(FxSlot, () => EffectsController.CreateTongueHitEffect(TongueTipPos, 0.2f));
                                         }
 
                                     }
@@ -1692,7 +1699,7 @@ public class Character : MonoBehaviour, ISimTickable
                     if (wasBouncingBeforeTongue)
                         StopBouncing();
                     {
-                        SoundController.PlaySoundEffect("Burp", 0.5f, TongueTipPos);
+                        SimFx.Play(FxSlot, "Burp", 0.5f, TongueTipPos);
                         tongueState = TongueState.HitFlyBurping;
                         tongueDelayLeft = 0.65f;
                         IngestedFly = true;
@@ -1736,7 +1743,7 @@ public class Character : MonoBehaviour, ISimTickable
         tongueDistance = 0f;
         tongueState = TongueState.Extending;
         tongueDelayLeft = tongueDelay;
-        SoundController.PlaySoundEffect("TongueLaunch", 0.5f, transform.position);
+        SimFx.Play(FxSlot, "TongueLaunch", 0.5f, transform.position);
         tongueDir = facingDir * Vector2.right;
         if (input.right)
             tongueDir = Vector2.right;
