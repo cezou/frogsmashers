@@ -94,6 +94,11 @@ public class ScoreScreenController : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        if (FrogSmashers.Net.OnlineMatch.Active)
+        {
+            UpdateOnline();
+            return;
+        }
         if (updateScoresDelay > 0f)
         {
             updateScoresDelay -= Time.deltaTime;
@@ -172,5 +177,47 @@ public class ScoreScreenController : MonoBehaviour
             }
         }
 
+    }
+
+    /// <summary>
+    /// Online score interlude: the host drives the exit (next level or
+    /// match end) over the network, so this only displays the cumulative
+    /// wins and highlights the winner. The next/over scene transition is
+    /// never loaded locally here.
+    /// </summary>
+    void UpdateOnline()
+    {
+        if (updateScoresDelay > 0f)
+        {
+            updateScoresDelay -= Time.deltaTime;
+            return;
+        }
+        if (!haveUpdatedScores)
+        {
+            haveUpdatedScores = true;
+            PresentOnlineWinner();
+            SortScoreboard();
+        }
+        ArrangeScoreboard(false);
+        FrogSmashers.Net.OnlineMatch.ScoreFrameUpdate(Time.deltaTime);
+    }
+
+    void PresentOnlineWinner()
+    {
+        bool matchOver = FrogSmashers.Net.OnlineMatch.ScoreMatchOver;
+        int winSlot = matchOver
+            ? FrogSmashers.Net.OnlineMatch.ScoreOverallWinnerSlot
+            : FrogSmashers.Net.OnlineMatch.ScoreWinnerSlot;
+        foreach (var psd in playerScoreDisplays)
+        {
+            if (psd.player.sortPriority != winSlot)
+                continue;
+            if (matchOver)
+                psd.TemorarilyDisplay(
+                    FrogSmashers.Net.OnlineMatch.SlotName(winSlot)
+                    + " WINS!", 10f);
+            else
+                psd.TemorarilyDisplay("WINNER!", 5f);
+        }
     }
 }

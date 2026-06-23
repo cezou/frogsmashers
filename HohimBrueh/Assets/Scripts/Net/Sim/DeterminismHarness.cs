@@ -128,6 +128,7 @@ namespace FrogSmashers.Net.Sim
         static DeterminismHarness instance;
         static Mode mode;
         static int netPlayers = 2;
+        static bool teamMode;
 
         readonly List<uint> runA = new List<uint>(ticksPerRun);
         readonly List<uint> runB = new List<uint>(ticksPerRun);
@@ -157,8 +158,9 @@ namespace FrogSmashers.Net.Sim
 
             Active = true;
             netPlayers = GetCliArgInt("-netPlayers", 2);
+            teamMode = HasCliArg("-teamMode");
             Debug.Log($"[DeterminismHarness] Active, mode={mode},"
-                + $" players={netPlayers}");
+                + $" players={netPlayers}, teamMode={teamMode}");
             Application.targetFrameRate = 300;
             QualitySettings.vSyncCount = 0;
             SimulationDriver.ForcedTicksPerFrame = 10;
@@ -189,11 +191,13 @@ namespace FrogSmashers.Net.Sim
             GameController.activePlayers.Clear();
             for (int slot = 0; slot < netPlayers; slot++)
             {
-                GameController.activePlayers.Add(new Player(
+                var player = new Player(
                     InputReader.Device.Gamepad1 + slot,
-                    slotColors[slot], slot));
+                    slotColors[slot], slot);
+                player.team = (slot & 1) == 0 ? Team.Blue : Team.Red;
+                GameController.activePlayers.Add(player);
             }
-            GameController.isTeamMode = false;
+            GameController.isTeamMode = teamMode;
             if (mode == Mode.InputPipe && runIndex == 1)
             {
                 inputBuffer = new InputRingBuffer();

@@ -32,6 +32,7 @@ namespace FrogSmashers.Net.Transport
         public bool IsHost { get; private set; }
 
         ISession lobby;
+        int maxPlayers;
 
         /// <summary>Creates a relay allocation and hosts the match.
         /// When discoverable, also publishes a UGS lobby entry.</summary>
@@ -49,7 +50,12 @@ namespace FrogSmashers.Net.Transport
             if (!NetworkManager.Singleton.StartHost())
                 throw new System.InvalidOperationException(
                     "StartHost failed");
-            Current = new NetSession { JoinCode = code, IsHost = true };
+            Current = new NetSession
+            {
+                JoinCode = code,
+                IsHost = true,
+                maxPlayers = maxPlayers,
+            };
             if (discoverable)
                 await Current.PublishLobbyAsync(maxPlayers, code);
             return Current;
@@ -106,6 +112,25 @@ namespace FrogSmashers.Net.Transport
             {
                 Debug.LogWarning(
                     $"[NetSession] Unpublish failed: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Re-publishes the lobby entry after a match, reusing the live
+        /// relay allocation (host only). No-op if already published.
+        /// </summary>
+        public async void Republish()
+        {
+            if (!IsHost || lobby != null)
+                return;
+            try
+            {
+                await PublishLobbyAsync(maxPlayers, JoinCode);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning(
+                    $"[NetSession] Republish failed: {e.Message}");
             }
         }
 

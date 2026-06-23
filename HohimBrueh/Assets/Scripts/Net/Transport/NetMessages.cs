@@ -26,7 +26,8 @@ namespace FrogSmashers.Net.Transport
         const string removePlayerMsg = "FSRemovePlayer";
         const string rosterMsg = "FSRoster";
         const string welcomeMsg = "FSWelcome";
-        const string lobbyReadyMsg = "FSLobbyReady";
+        const string lobbyChoiceMsg = "FSLobbyChoice";
+        const string scoreMsg = "FSScore";
 
         /// <summary>Max resend window per slot in one input packet.</summary>
         public const int MaxInputWindow = 64;
@@ -49,8 +50,9 @@ namespace FrogSmashers.Net.Transport
         /// confirmed tick: (senderClientId, slot, ackTick).</summary>
         public static event Action<ulong, int, uint> InputAckReceived;
 
-        /// <summary>Raised on clients: (seed, slot, playerCount, level).</summary>
-        public static event Action<ulong, int, int, int> MatchStartReceived;
+        /// <summary>Raised on clients: (seed, slot, count, level, teamMode).</summary>
+        public static event Action<ulong, int, int, int, bool>
+            MatchStartReceived;
 
         /// <summary>Raised on the host when a client is scene-ready.</summary>
         public static event Action<ulong> ReadyReceived;
@@ -82,8 +84,18 @@ namespace FrogSmashers.Net.Transport
         /// <summary>Raised on a joining client with the lobby state.</summary>
         public static event Action<FastBufferReader> WelcomeReceived;
 
-        /// <summary>Raised on the host: a client toggled ready.</summary>
-        public static event Action<ulong> LobbyReadyToggleReceived;
+        /// <summary>
+        /// Raised on the host: a client's lobby choice
+        /// (senderClientId, color, team, ready/accepted).
+        /// </summary>
+        public static event Action<ulong, Color, Team, bool>
+            LobbyChoiceReceived;
+
+        /// <summary>
+        /// Raised on clients with the inter-round score interlude:
+        /// (roundWinnerSlot, matchOver, overallWinnerSlot, winsBySlot).
+        /// </summary>
+        public static event Action<int, bool, int, int[]> ScoreReceived;
 
         static bool registered;
 
@@ -118,7 +130,9 @@ namespace FrogSmashers.Net.Transport
             RegisterMaybeSimulated(
                 messaging, welcomeMsg, OnWelcomeMsg, false);
             RegisterMaybeSimulated(
-                messaging, lobbyReadyMsg, OnLobbyReadyMsg, false);
+                messaging, lobbyChoiceMsg, OnLobbyChoiceMsg, false);
+            RegisterMaybeSimulated(
+                messaging, scoreMsg, OnScoreMsg, false);
             registered = true;
         }
 
@@ -143,7 +157,8 @@ namespace FrogSmashers.Net.Transport
                 messaging.UnregisterNamedMessageHandler(removePlayerMsg);
                 messaging.UnregisterNamedMessageHandler(rosterMsg);
                 messaging.UnregisterNamedMessageHandler(welcomeMsg);
-                messaging.UnregisterNamedMessageHandler(lobbyReadyMsg);
+                messaging.UnregisterNamedMessageHandler(lobbyChoiceMsg);
+                messaging.UnregisterNamedMessageHandler(scoreMsg);
             }
             NetSimulator.Reset();
         }
@@ -168,13 +183,21 @@ namespace FrogSmashers.Net.Transport
                     sender, reader, handler, droppable));
         }
 
-        /// <summary>Client → host: toggle my ready flag (reliable).</summary>
-        public static void SendLobbyReadyToggle()
+        /// <summary>Client → host: my lobby color/team/accept (reliable).</summary>
+        public static void SendLobbyChoice(
+            Color color, Team team, bool ready)
         {
-            using var writer = new FastBufferWriter(1, Allocator.Temp);
-            writer.WriteValueSafe((byte)1);
+            using var writer = new FastBufferWriter(8, Allocator.Temp);
+            writer.WriteValueSafe((byte)Mathf.Clamp(
+                Mathf.RoundToInt(color.r * 255f), 0, 255));
+            writer.WriteValueSafe((byte)Mathf.Clamp(
+                Mathf.RoundToInt(color.g * 255f), 0, 255));
+            writer.WriteValueSafe((byte)Mathf.Clamp(
+                Mathf.RoundToInt(color.b * 255f), 0, 255));
+            writer.WriteValueSafe((byte)team);
+            writer.WriteValueSafe(ready);
             NetworkManager.Singleton.CustomMessagingManager
-                .SendNamedMessage(lobbyReadyMsg,
+                .SendNamedMessage(lobbyChoiceMsg,
                     NetworkManager.ServerClientId, writer,
                     NetworkDelivery.ReliableSequenced);
         }
@@ -259,7 +282,7 @@ namespace FrogSmashers.Net.Transport
         /// <summary>Host → client: match parameters (reliable).</summary>
         public static void SendMatchStart(
             ulong targetClientId, ulong seed, int slot, int playerCount,
-            int level)
+            int level, bool teamMode)
         {
             using var writer = new FastBufferWriter(16, Allocator.Temp);
             writer.WriteValueSafe(CurrentEpoch);
@@ -267,8 +290,32 @@ namespace FrogSmashers.Net.Transport
             writer.WriteValueSafe((byte)slot);
             writer.WriteValueSafe((byte)playerCount);
             writer.WriteValueSafe((byte)level);
+            writer.WriteValueSafe(teamMode);
             NetworkManager.Singleton.CustomMessagingManager
                 .SendNamedMessage(matchStartMsg, targetClientId, writer,
+                    NetworkDelivery.ReliableSequenced);
+        }
+
+        /// <summary>
+        /// Host → client: inter-round score interlude (reliable). Carries
+        /// the round winner, whether the match is over (and its overall
+        /// winner), and the cumulative round wins per slot.
+        /// </summary>
+        public static void SendScore(
+            ulong targetClientId, int winnerSlot, bool matchOver,
+            int overallSlot, int[] wins)
+        {
+            using var writer = new FastBufferWriter(
+                8 + wins.Length, Allocator.Temp);
+            writer.WriteValueSafe(CurrentEpoch);
+            writer.WriteValueSafe((sbyte)winnerSlot);
+            writer.WriteValueSafe(matchOver);
+            writer.WriteValueSafe((sbyte)overallSlot);
+            writer.WriteValueSafe((byte)wins.Length);
+            for (int i = 0; i < wins.Length; i++)
+                writer.WriteValueSafe((byte)wins[i]);
+            NetworkManager.Singleton.CustomMessagingManager
+                .SendNamedMessage(scoreMsg, targetClientId, writer,
                     NetworkDelivery.ReliableSequenced);
         }
 
@@ -372,7 +419,9 @@ namespace FrogSmashers.Net.Transport
             reader.ReadValueSafe(out byte slot);
             reader.ReadValueSafe(out byte playerCount);
             reader.ReadValueSafe(out byte level);
-            MatchStartReceived?.Invoke(seed, slot, playerCount, level);
+            reader.ReadValueSafe(out bool teamMode);
+            MatchStartReceived?.Invoke(
+                seed, slot, playerCount, level, teamMode);
         }
 
         static void OnReadyMsg(
@@ -451,11 +500,36 @@ namespace FrogSmashers.Net.Transport
             WelcomeReceived?.Invoke(reader);
         }
 
-        static void OnLobbyReadyMsg(
+        static void OnLobbyChoiceMsg(
             ulong senderClientId, FastBufferReader reader)
         {
-            reader.ReadValueSafe(out byte _);
-            LobbyReadyToggleReceived?.Invoke(senderClientId);
+            reader.ReadValueSafe(out byte r);
+            reader.ReadValueSafe(out byte g);
+            reader.ReadValueSafe(out byte b);
+            reader.ReadValueSafe(out byte team);
+            reader.ReadValueSafe(out bool ready);
+            LobbyChoiceReceived?.Invoke(senderClientId,
+                new Color(r / 255f, g / 255f, b / 255f),
+                (Team)team, ready);
+        }
+
+        static void OnScoreMsg(
+            ulong senderClientId, FastBufferReader reader)
+        {
+            reader.ReadValueSafe(out byte epoch);
+            CurrentEpoch = epoch;
+            reader.ReadValueSafe(out sbyte winnerSlot);
+            reader.ReadValueSafe(out bool matchOver);
+            reader.ReadValueSafe(out sbyte overallSlot);
+            reader.ReadValueSafe(out byte count);
+            var wins = new int[count];
+            for (int i = 0; i < count; i++)
+            {
+                reader.ReadValueSafe(out byte w);
+                wins[i] = w;
+            }
+            ScoreReceived?.Invoke(
+                winnerSlot, matchOver, overallSlot, wins);
         }
     }
 }

@@ -1,22 +1,31 @@
+using FreeLives;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 namespace FrogSmashers.Net.UI
 {
     /// <summary>
-    /// Minimal runtime overlay shown during the online lobby brawl:
-    /// roster with ready flags, countdown, and the ready prompt. Also
-    /// reads the local START/Enter press (frame-level control plane,
-    /// not a sim input) and pumps the host's countdown logic.
+    /// Drives the local player's real <see cref="JoinCanvas"/> in the
+    /// online lobby: the same choose-color icons, with the on-platform frog
+    /// frozen and live-recoloring until the player confirms. Reads the
+    /// local device directly (control plane, not the rollback buffer);
+    /// JoinCanvas's own Update is suppressed online. Buttons match local so
+    /// the default icon prompts are accurate: B change color/team, L/R
+    /// shade, X confirm, Y back. Host-only SELECT toggles team mode.
     /// </summary>
     public class OnlineLobbyOverlay : MonoBehaviour
     {
         static OnlineLobbyOverlay instance;
 
+        JoinCanvas canvas;
+        readonly InputState input = new InputState();
+        bool wasB, wasX, wasY, wasSelect;
+        bool lastAccepted;
+        bool lastTeamMode;
         GUIStyle title;
-        GUIStyle line;
+        GUIStyle hint;
 
-        /// <summary>Creates the overlay for the current lobby.</summary>
+        /// <summary>Creates the controller for the current lobby.</summary>
         public static void Create()
         {
             if (instance != null)
@@ -26,7 +35,7 @@ namespace FrogSmashers.Net.UI
             instance = host.AddComponent<OnlineLobbyOverlay>();
         }
 
-        /// <summary>Removes the overlay (lobby over).</summary>
+        /// <summary>Removes the controller (lobby over).</summary>
         public static void Destroy()
         {
             if (instance == null)
@@ -39,22 +48,104 @@ namespace FrogSmashers.Net.UI
         {
             if (!OnlineMatch.InLobby)
                 return;
+            EnsureCanvas();
             OnlineMatch.LobbyFrameUpdate(Time.deltaTime);
-            bool toggle =
-                (Keyboard.current != null
-                    && Keyboard.current.enterKey.wasPressedThisFrame)
-                || (Gamepad.current != null
-                    && Gamepad.current.startButton.wasPressedThisFrame);
-            if (toggle)
+            ReadControlPlane();
+            RefreshVisuals();
+        }
+
+        void EnsureCanvas()
+        {
+            if (canvas != null)
+                return;
+            var all = GameController.GetJoinCanvases();
+            if (all == null || OnlineMatch.LocalSlot >= all.Length)
+                return;
+            canvas = all[OnlineMatch.LocalSlot];
+            if (canvas == null)
+                return;
+            canvas.gameObject.SetActive(true);
+            if (canvas.frogImage != null)
+                canvas.frogImage.enabled = false;
+            lastAccepted = !OnlineMatch.LocalAccepted;
+            lastTeamMode = !OnlineMatch.TeamModeEnabled;
+        }
+
+        void ReadControlPlane()
+        {
+            ReadDevices(input);
+            bool select = SelectPressed();
+
+            if (select && !wasSelect && OnlineMatch.IsHost)
+                OnlineMatch.HostToggleTeamMode();
+
+            if (!OnlineMatch.LocalAccepted)
             {
-                var driver = Rollback.RollbackNetDriver.Active;
-                if (driver != null)
-                {
-                    Debug.Log("[OnlineLobbyOverlay] Ready pressed,"
-                        + " same-frame poll probe ="
-                        + $" {driver.PollLocalDevices():X4}");
-                }
-                OnlineMatch.ToggleLocalReady();
+                if (input.bButton && !wasB)
+                    OnlineMatch.LobbyCycleChoice();
+                if (input.xButton && !wasX)
+                    OnlineMatch.LobbyAccept();
+                float dir = (input.right ? 1f : 0f) - (input.left ? 1f : 0f);
+                if (Mathf.Abs(dir) > 0.5f)
+                    OnlineMatch.LobbyAdjustShade(dir, Time.deltaTime);
+            }
+            else if (input.yButton && !wasY)
+            {
+                OnlineMatch.LobbyBack();
+            }
+
+            wasB = input.bButton;
+            wasX = input.xButton;
+            wasY = input.yButton;
+            wasSelect = select;
+        }
+
+        static void ReadDevices(InputState s)
+        {
+            InputReader.ClearInputState(s);
+            var pad = Gamepad.current;
+            if (pad != null)
+                LocalInputSource.ReadGamepad(pad, s);
+            var kb = Keyboard.current;
+            if (kb != null)
+            {
+                s.bButton |= kb.cKey.isPressed;
+                s.xButton |= kb.enterKey.isPressed;
+                s.yButton |= kb.backspaceKey.isPressed;
+                s.right |= kb.rightArrowKey.isPressed;
+                s.left |= kb.leftArrowKey.isPressed;
+            }
+        }
+
+        static bool SelectPressed()
+        {
+            var pad = Gamepad.current;
+            var kb = Keyboard.current;
+            return (pad != null && pad.selectButton.isPressed)
+                || (kb != null && kb.tabKey.isPressed);
+        }
+
+        void RefreshVisuals()
+        {
+            if (canvas == null)
+                return;
+            bool accepted = OnlineMatch.LocalAccepted;
+            bool team = OnlineMatch.TeamModeEnabled;
+            if (accepted != lastAccepted || team != lastTeamMode)
+            {
+                lastAccepted = accepted;
+                lastTeamMode = team;
+                if (canvas.joinPromptCanvas != null)
+                    canvas.joinPromptCanvas.enabled = false;
+                if (canvas.chooseColorCanvas != null)
+                    canvas.chooseColorCanvas.enabled = !accepted;
+                if (canvas.backPromptCanvas != null)
+                    canvas.backPromptCanvas.enabled = accepted;
+                if (canvas.teamChangeColorObject != null)
+                    canvas.teamChangeColorObject.SetActive(team);
+                if (canvas.changeColorText != null)
+                    canvas.changeColorText.text =
+                        team ? "CHANGE TEAM" : "CHANGE COLOR";
             }
         }
 
@@ -63,30 +154,18 @@ namespace FrogSmashers.Net.UI
             if (!OnlineMatch.InLobby)
                 return;
             EnsureStyles();
-            float x = 24f;
-            float y = 24f;
-            GUI.Label(new Rect(x, y, 700f, 44f), "ONLINE LOBBY", title);
-            y += 48f;
-            var roster = OnlineMatch.Roster;
-            for (int i = 0; i < roster.Count; i++)
+            if (OnlineMatch.IsHost)
             {
-                string ready = roster[i].Ready ? "READY" : "...";
-                GUI.Label(new Rect(x, y, 700f, 34f),
-                    $"{roster[i].Name}  [{ready}]", line);
-                y += 34f;
+                string mode = OnlineMatch.TeamModeEnabled
+                    ? "TEAMS" : "FREE FOR ALL";
+                GUI.Label(new Rect(24f, 24f, 900f, 36f),
+                    $"MODE: {mode}   —   SELECT to change", hint);
             }
-            y += 10f;
             if (OnlineMatch.Countdown >= 0f)
             {
-                GUI.Label(new Rect(x, y, 700f, 44f),
+                GUI.Label(new Rect(24f, 64f, 700f, 44f),
                     "STARTING IN "
-                    + $"{Mathf.CeilToInt(OnlineMatch.Countdown)}",
-                    title);
-            }
-            else
-            {
-                GUI.Label(new Rect(x, y, 700f, 34f),
-                    "PRESS START / ENTER WHEN READY", line);
+                    + $"{Mathf.CeilToInt(OnlineMatch.Countdown)}", title);
             }
         }
 
@@ -100,11 +179,12 @@ namespace FrogSmashers.Net.UI
                 fontStyle = FontStyle.Bold,
             };
             title.normal.textColor = new Color(1f, 0.85f, 0.25f);
-            line = new GUIStyle(GUI.skin.label)
+            hint = new GUIStyle(GUI.skin.label)
             {
-                fontSize = 24,
+                fontSize = 22,
+                fontStyle = FontStyle.Bold,
             };
-            line.normal.textColor = Color.white;
+            hint.normal.textColor = Color.white;
         }
     }
 }
