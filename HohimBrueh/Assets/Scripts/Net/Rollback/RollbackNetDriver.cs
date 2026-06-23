@@ -118,6 +118,8 @@ namespace FrogSmashers.Net.Rollback
             {
                 packed = PollLocalDevices();
             }
+            if (OnlineMatch.LocalChoosing)
+                packed = InputPacking.ChoosingBit;
             if (packed != 0 && !loggedFirstInput)
             {
                 loggedFirstInput = true;

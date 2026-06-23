@@ -764,7 +764,10 @@ public class GameController : MonoBehaviour, ISimTickable
 
     void SpawnCharacter(Player player)
     {
-        var point = Terrain.GetSpawnPoint();
+        var point = player != null
+            && FrogSmashers.Net.OnlineMatch.InLobby
+            ? Terrain.GetSpawnPoint(player.sortPriority)
+            : Terrain.GetSpawnPoint();
         Character ch;
         if (player != null && player.pooledCharacter != null)
         {
@@ -783,8 +786,8 @@ public class GameController : MonoBehaviour, ISimTickable
             player.character = ch;
             player.spawnDelay = 1f;
 
-            EffectsController.CreateSpawnEffects(point + Vector3.up, player.color);
-            SoundController.PlaySoundEffect("CharacterSpawn", 0.4f, point);
+            SimFx.Spawn(player.sortPriority, () => EffectsController.CreateSpawnEffects(point + Vector3.up, player.color));
+            SimFx.Play(player.sortPriority, "CharacterSpawn", 0.4f, point);
         }
     }
 

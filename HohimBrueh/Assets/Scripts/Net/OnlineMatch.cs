@@ -27,6 +27,7 @@ namespace FrogSmashers.Net
             Inactive,
             Lobby,
             Match,
+            Score,
         }
 
         /// <summary>One participant as tracked by the control plane.</summary>
@@ -37,12 +38,16 @@ namespace FrogSmashers.Net
             public bool Ready;
             public ulong ClientId;
             public uint ApplyTick;
+            public Color Color = Color.white;
+            public Team Team;
         }
 
         const string lobbyScene = "JoinScreen";
+        const string scoreScene = "ScoreScreen";
         const uint applyMarginTicks = 60;
         const uint opRetentionTicks = 240;
         const float readyCountdownTime = 5f;
+        const float scoreHoldTime = 5f;
         const int maxPlayers = 4;
 
         static readonly string[] matchLevels =
@@ -55,8 +60,8 @@ namespace FrogSmashers.Net
             "6Finale",
         };
 
-        /// <summary>Sentinel level meaning "match over, leave to menu".</summary>
-        const int matchOverLevel = 255;
+        /// <summary>Sentinel level meaning "match over, back to lobby".</summary>
+        const int lobbyReturnLevel = 254;
 
         /// <summary>Round wins per slot, persisted across level loads.</summary>
         static readonly int[] matchWinsBySlot = new int[maxPlayers];
@@ -67,6 +72,19 @@ namespace FrogSmashers.Net
             Color.blue,
             Color.green,
             Color.yellow,
+        };
+
+        /// <summary>FFA color choices cycled in the lobby.</summary>
+        static readonly Color[] palette =
+        {
+            Color.red,
+            Color.blue,
+            Color.green,
+            Color.yellow,
+            new Color(1f, 0.4f, 0f),
+            new Color(0.7f, 0.2f, 1f),
+            Color.cyan,
+            Color.white,
         };
 
         static readonly List<RosterEntry> roster =
@@ -86,6 +104,22 @@ namespace FrogSmashers.Net
         static float countdown = -1f;
         static float rosterRebroadcast;
         static MembershipApplier applier;
+        static LobbyPinApplier pinApplier;
+
+        static float scoreHold = -1f;
+        static int scoreWinnerSlot = -1;
+        static int scoreOverallSlot = -1;
+        static bool scoreMatchOver;
+        static int pendingNextLevel;
+        static bool lobbyReturnActive;
+
+        const float forceLaunchTime = 10f;
+        static bool teamMode;
+        static bool localAccepted;
+        static int localColorIndex;
+        static float localShade;
+        static Team localTeam;
+        static float forceLaunch = -1f;
 
         /// <summary>Current online phase.</summary>
         public static Phase CurrentPhase { get; private set; }
@@ -107,6 +141,70 @@ namespace FrogSmashers.Net
 
         /// <summary>True on the authoritative client-host.</summary>
         public static bool IsHost { get; private set; }
+
+        /// <summary>
+        /// True while the local player is still choosing color/team (frog
+        /// frozen): the input chokepoint forces neutral sim input for this
+        /// slot until ACCEPT.
+        /// </summary>
+        public static bool LocalChoosing
+        {
+            get { return InLobby && !localAccepted; }
+        }
+
+        /// <summary>True when the host has enabled team mode for the match.</summary>
+        public static bool TeamModeEnabled
+        {
+            get { return teamMode; }
+        }
+
+        /// <summary>The local player's current choosing color.</summary>
+        public static Color LocalColor
+        {
+            get
+            {
+                return teamMode
+                    ? TeamColor(LocalTeam, localShade)
+                    : palette[localColorIndex % palette.Length];
+            }
+        }
+
+        /// <summary>The local player's current team.</summary>
+        public static Team LocalTeam
+        {
+            get { return localTeam; }
+        }
+
+        /// <summary>True once the local player has accepted (is ready).</summary>
+        public static bool LocalAccepted
+        {
+            get { return localAccepted; }
+        }
+
+        /// <summary>Round winner's slot, for the score interlude UI.</summary>
+        public static int ScoreWinnerSlot
+        {
+            get { return scoreWinnerSlot; }
+        }
+
+        /// <summary>True when the score interlude ends the match.</summary>
+        public static bool ScoreMatchOver
+        {
+            get { return scoreMatchOver; }
+        }
+
+        /// <summary>Overall match winner's slot (match-over only).</summary>
+        public static int ScoreOverallWinnerSlot
+        {
+            get { return scoreOverallSlot; }
+        }
+
+        /// <summary>Display name for a slot, or a default.</summary>
+        public static string SlotName(int slot)
+        {
+            var entry = FindBySlot(slot);
+            return entry != null ? entry.Name : "PLAYER " + (slot + 1);
+        }
 
         /// <summary>Shared match seed.</summary>
         public static ulong Seed { get; private set; }
@@ -190,7 +288,8 @@ namespace FrogSmashers.Net
             NetMessages.RemovePlayerReceived += OnRemovePlayer;
             NetMessages.RosterReceived += OnRoster;
             NetMessages.WelcomeReceived += OnWelcome;
-            NetMessages.LobbyReadyToggleReceived += OnLobbyReadyToggle;
+            NetMessages.LobbyChoiceReceived += OnLobbyChoice;
+            NetMessages.ScoreReceived += OnScore;
             NetworkManager.Singleton.OnClientDisconnectCallback +=
                 OnClientDisconnected;
         }
@@ -205,16 +304,21 @@ namespace FrogSmashers.Net
             Seed = (ulong)System.DateTime.Now.Ticks;
             CurrentPhase = Phase.Lobby;
             countdown = -1f;
+            forceLaunch = -1f;
+            teamMode = false;
             roster.Clear();
             pendingRemovals.Clear();
             parkedPlayers.Clear();
-            roster.Add(new RosterEntry
+            var hostEntry = new RosterEntry
             {
                 Slot = 0,
                 Name = System.Environment.UserName,
                 ClientId = NetworkManager.Singleton.LocalClientId,
                 ApplyTick = 0,
-            });
+            };
+            DefaultChoice(hostEntry);
+            roster.Add(hostEntry);
+            ResetLocalChoice();
             BuildActivePlayers();
             BeginScene(lobbyScene);
         }
@@ -264,16 +368,25 @@ namespace FrogSmashers.Net
             int slot = 0;
             foreach (var clientId in manager.ConnectedClientsIds)
             {
-                roster.Add(new RosterEntry
+                var entry = new RosterEntry
                 {
                     Slot = slot,
                     Name = $"PLAYER{slot + 1}",
                     ClientId = clientId,
                     ApplyTick = 0,
-                });
+                };
+                DefaultChoice(entry);
+                roster.Add(entry);
                 slot++;
             }
+            localAccepted = true;
             TransitionTo(0, seed);
+        }
+
+        /// <summary>Test hook: forces team mode for harness matches.</summary>
+        public static void SetTeamMode(bool on)
+        {
+            teamMode = on;
         }
 
         /// <summary>Local player leaves; tears down and shows menu.</summary>
@@ -285,7 +398,10 @@ namespace FrogSmashers.Net
             SceneManager.LoadScene("MainMenu");
         }
 
-        /// <summary>Round over (online): the host drives the next level.</summary>
+        /// <summary>
+        /// Round over (online): the host shows the score interlude, then
+        /// drives the next level (or ends the match).
+        /// </summary>
         public static void OnRoundFinished()
         {
             if (!IsHost || CurrentPhase != Phase.Match
@@ -294,15 +410,109 @@ namespace FrogSmashers.Net
                 return;
             }
             transitionPending = true;
+            int winnerSlot = -1;
+            var winner = GameController.GetWinningPlayer();
+            if (winner != null)
+                winnerSlot = winner.sortPriority;
             CreditRoundWinner();
             int remaining = matchLevels.Length - (currentLevel + 1);
-            if (remaining <= 0 || MatchClinched(remaining))
+            bool over = remaining <= 0 || MatchClinched(remaining);
+            int overallSlot = over ? LeadingSlot() : -1;
+            EnterScore(winnerSlot, over, overallSlot, currentLevel + 1);
+        }
+
+        /// <summary>Slot with the most round wins (ties: lowest slot).</summary>
+        static int LeadingSlot()
+        {
+            int best = 0;
+            int bestWins = -1;
+            for (int i = 0; i < matchWinsBySlot.Length; i++)
             {
-                EndMatch();
-                return;
+                if (matchWinsBySlot[i] > bestWins)
+                {
+                    bestWins = matchWinsBySlot[i];
+                    best = i;
+                }
             }
-            TransitionTo(currentLevel + 1,
-                (ulong)System.DateTime.Now.Ticks);
+            return best;
+        }
+
+        /// <summary>
+        /// Host: bumps the epoch, tells every client to show the score
+        /// interlude, and loads it locally. The host holds it for
+        /// <see cref="scoreHoldTime"/> (see <see cref="ScoreFrameUpdate"/>)
+        /// then drives the next level or ends the match.
+        /// </summary>
+        static void EnterScore(
+            int winnerSlot, bool matchOver, int overallSlot, int nextLevel)
+        {
+            scoreWinnerSlot = winnerSlot;
+            scoreMatchOver = matchOver;
+            scoreOverallSlot = overallSlot;
+            pendingNextLevel = nextLevel;
+            scoreHold = scoreHoldTime;
+            CurrentPhase = Phase.Score;
+            NetMessages.CurrentEpoch++;
+            GameController.levelNo = currentLevel + 1;
+            SyncRoundWinsToPlayers();
+            var manager = NetworkManager.Singleton;
+            for (int i = 0; i < roster.Count; i++)
+            {
+                var entry = roster[i];
+                if (entry.ClientId != manager.LocalClientId)
+                {
+                    NetMessages.SendScore(entry.ClientId, winnerSlot,
+                        matchOver, overallSlot, matchWinsBySlot);
+                }
+            }
+            TearDownSimLayer();
+            BeginScene(scoreScene);
+        }
+
+        /// <summary>Client: shows the score interlude sent by the host.</summary>
+        static void OnScore(
+            int winnerSlot, bool matchOver, int overallSlot, int[] wins)
+        {
+            if (IsHost)
+                return;
+            scoreWinnerSlot = winnerSlot;
+            scoreMatchOver = matchOver;
+            scoreOverallSlot = overallSlot;
+            CurrentPhase = Phase.Score;
+            for (int i = 0; i < matchWinsBySlot.Length; i++)
+                matchWinsBySlot[i] = i < wins.Length ? wins[i] : 0;
+            GameController.levelNo = currentLevel + 1;
+            SyncRoundWinsToPlayers();
+            TearDownSimLayer();
+            BeginScene(scoreScene);
+        }
+
+        /// <summary>Pumped by the score screen; host drives the exit.</summary>
+        public static void ScoreFrameUpdate(float dt)
+        {
+            if (!IsHost || CurrentPhase != Phase.Score || scoreHold < 0f)
+                return;
+            scoreHold -= dt;
+            if (scoreHold > 0f)
+                return;
+            scoreHold = -1f;
+            if (scoreMatchOver)
+                ReturnToLobby();
+            else
+                TransitionTo(pendingNextLevel,
+                    (ulong)System.DateTime.Now.Ticks);
+        }
+
+        /// <summary>Reflects cumulative slot wins onto the player data.</summary>
+        static void SyncRoundWinsToPlayers()
+        {
+            var players = GameController.activePlayers;
+            for (int i = 0; i < players.Count; i++)
+            {
+                int slot = players[i].sortPriority;
+                if (slot >= 0 && slot < matchWinsBySlot.Length)
+                    players[i].roundWins = matchWinsBySlot[slot];
+            }
         }
 
         /// <summary>Credits the round winner's slot toward the match.</summary>
@@ -340,9 +550,29 @@ namespace FrogSmashers.Net
             return leader > second + remaining;
         }
 
-        /// <summary>Tells every client to leave, then leaves locally.</summary>
-        static void EndMatch()
+        /// <summary>
+        /// Match over: brings every peer back to the playable lobby for
+        /// another match, keeping the roster, relay allocation and session
+        /// alive. Per-match state is reset and the lobby re-published so it
+        /// is discoverable again.
+        /// </summary>
+        static void ReturnToLobby()
         {
+            System.Array.Clear(matchWinsBySlot, 0, matchWinsBySlot.Length);
+            countdown = -1f;
+            forceLaunch = -1f;
+            scoreHold = -1f;
+            scoreMatchOver = false;
+            for (int i = 0; i < roster.Count; i++)
+            {
+                roster[i].Ready = false;
+                roster[i].ApplyTick = 0;
+            }
+            CurrentPhase = Phase.Lobby;
+            lobbyReturnActive = true;
+            ResetLocalChoice();
+            Seed = (ulong)System.DateTime.Now.Ticks;
+            NetMessages.CurrentEpoch++;
             var manager = NetworkManager.Singleton;
             for (int i = 0; i < roster.Count; i++)
             {
@@ -350,13 +580,28 @@ namespace FrogSmashers.Net
                 if (entry.ClientId != manager.LocalClientId)
                 {
                     NetMessages.SendMatchStart(entry.ClientId, Seed,
-                        entry.Slot, roster.Count, matchOverLevel);
+                        entry.Slot, roster.Count, lobbyReturnLevel,
+                        teamMode);
                 }
             }
-            LeaveLocal();
+            if (NetSession.Current != null)
+            {
+                NetSession.Current.Republish();
+                NetSession.Current.UpdatePlayerCount(roster.Count);
+            }
+            pendingRemovals.Clear();
+            parkedPlayers.Clear();
+            TearDownSimLayer();
+            BuildActivePlayers();
+            BeginScene(lobbyScene);
+            PushLocalChoice();
         }
 
-        /// <summary>Per-frame lobby logic, pumped by the overlay.</summary>
+        /// <summary>
+        /// Per-frame lobby logic, pumped by the overlay (host only). The
+        /// match launches when everyone has accepted (>=2, after a short
+        /// countdown) or, in a full lobby, after a force-launch timer.
+        /// </summary>
         public static void LobbyFrameUpdate(float dt)
         {
             if (!IsHost || CurrentPhase != Phase.Lobby)
@@ -364,50 +609,195 @@ namespace FrogSmashers.Net
             bool allReady = roster.Count >= 2;
             for (int i = 0; i < roster.Count; i++)
                 allReady &= roster[i].Ready;
+            bool launch = false;
             if (allReady)
             {
                 if (countdown < 0f)
                     countdown = readyCountdownTime;
                 countdown -= dt;
-                rosterRebroadcast -= dt;
-                if (rosterRebroadcast <= 0f)
-                {
-                    rosterRebroadcast = 0.5f;
-                    BroadcastRoster();
-                }
                 if (countdown <= 0f)
-                {
-                    countdown = -1f;
-                    if (NetSession.Current != null)
-                        NetSession.Current.Unpublish();
-                    TransitionTo(0, (ulong)System.DateTime.Now.Ticks);
-                }
+                    launch = true;
             }
             else if (countdown >= 0f)
             {
                 countdown = -1f;
+            }
+            if (roster.Count >= maxPlayers)
+            {
+                if (forceLaunch < 0f)
+                    forceLaunch = forceLaunchTime;
+                forceLaunch -= dt;
+                if (forceLaunch <= 0f)
+                    launch = true;
+            }
+            else
+            {
+                forceLaunch = -1f;
+            }
+            rosterRebroadcast -= dt;
+            if (rosterRebroadcast <= 0f)
+            {
+                rosterRebroadcast = 0.5f;
                 BroadcastRoster();
+            }
+            if (launch)
+            {
+                countdown = -1f;
+                forceLaunch = -1f;
+                if (NetSession.Current != null)
+                    NetSession.Current.Unpublish();
+                TransitionTo(0, (ulong)System.DateTime.Now.Ticks);
             }
         }
 
-        /// <summary>Toggles the local player's ready flag.</summary>
-        public static void ToggleLocalReady()
+        /// <summary>The active launch timer (countdown or force), or -1.</summary>
+        static float LaunchTimer()
         {
-            if (CurrentPhase != Phase.Lobby)
+            if (countdown >= 0f)
+                return countdown;
+            return forceLaunch;
+        }
+
+        /// <summary>B: cycle color (FFA) or switch team (team mode).</summary>
+        public static void LobbyCycleChoice()
+        {
+            if (!InLobby)
                 return;
+            if (teamMode)
+            {
+                localTeam = localTeam == Team.Red ? Team.Blue : Team.Red;
+                localShade = 0.3f;
+            }
+            else
+            {
+                localColorIndex = (localColorIndex + 1) % palette.Length;
+            }
+            PushLocalChoice();
+            PlaySpawnFx();
+        }
+
+        /// <summary>Left/right shade adjust within a team color.</summary>
+        public static void LobbyAdjustShade(float dir, float dt)
+        {
+            if (!InLobby || !teamMode)
+                return;
+            localShade = Mathf.Clamp(
+                localShade + dir * dt * 0.5f, 0f, 0.7f);
+            PushLocalChoice();
+        }
+
+        /// <summary>X: accept the current choice (= ready to launch).</summary>
+        public static void LobbyAccept()
+        {
+            if (!InLobby || localAccepted)
+                return;
+            localAccepted = true;
+            PushLocalChoice();
+        }
+
+        /// <summary>
+        /// Y: go back to choosing (un-ready). The frog snaps back to its
+        /// spawn point (the choosing flag re-pins it) with a spawn effect.
+        /// </summary>
+        public static void LobbyBack()
+        {
+            if (!InLobby || !localAccepted)
+                return;
+            localAccepted = false;
+            PushLocalChoice();
+            PlaySpawnFx();
+        }
+
+        /// <summary>Local spawn puff + sound at the player's platform.</summary>
+        static void PlaySpawnFx()
+        {
+            Vector3 point = global::Terrain.GetSpawnPoint(LocalSlot);
+            EffectsController.CreateSpawnEffects(
+                point + Vector3.up, LocalColor);
+            SoundController.PlaySoundEffect(
+                "CharacterSpawn", 0.3f, point);
+        }
+
+        /// <summary>
+        /// SELECT (host only): toggle team mode / FFA. Resets any running
+        /// launch timer so changing mode mid-countdown restarts it.
+        /// </summary>
+        public static void HostToggleTeamMode()
+        {
+            if (!IsHost || CurrentPhase != Phase.Lobby)
+                return;
+            teamMode = !teamMode;
+            countdown = -1f;
+            forceLaunch = -1f;
+            BroadcastRoster();
+            OnTeamModeChangedLocal();
+        }
+
+        static void ResetLocalChoice()
+        {
+            localAccepted = false;
+            localColorIndex = LocalSlot % palette.Length;
+            localShade = 0.3f;
+            localTeam = (LocalSlot & 1) == 0 ? Team.Blue : Team.Red;
+        }
+
+        static void OnTeamModeChangedLocal()
+        {
+            ResetLocalChoice();
+            PushLocalChoice();
+        }
+
+        static void PushLocalChoice()
+        {
+            var color = LocalColor;
+            ApplyColorToFrog(LocalSlot, color);
             if (IsHost)
             {
                 var entry = FindBySlot(LocalSlot);
                 if (entry != null)
                 {
-                    entry.Ready = !entry.Ready;
-                    BroadcastRoster();
+                    entry.Color = color;
+                    entry.Team = localTeam;
+                    entry.Ready = localAccepted;
                 }
+                BroadcastRoster();
             }
             else
             {
-                NetMessages.SendLobbyReadyToggle();
+                NetMessages.SendLobbyChoice(
+                    color, localTeam, localAccepted);
             }
+        }
+
+        /// <summary>
+        /// Re-tints a spawned lobby frog so color choices show live (the
+        /// animator reads Player.color each frame). Cosmetic — color is not
+        /// in the sim hash.
+        /// </summary>
+        static void ApplyColorToFrog(int slot, Color color)
+        {
+            var players = GameController.activePlayers;
+            for (int i = 0; i < players.Count; i++)
+            {
+                if (players[i].sortPriority == slot)
+                {
+                    players[i].color = color;
+                    return;
+                }
+            }
+        }
+
+        static Color TeamColor(Team team, float shade)
+        {
+            return Color.Lerp(
+                team == Team.Red ? Color.red : Color.blue,
+                Color.white, shade);
+        }
+
+        static void DefaultChoice(RosterEntry entry)
+        {
+            entry.Color = palette[entry.Slot % palette.Length];
+            entry.Team = (entry.Slot & 1) == 0 ? Team.Blue : Team.Red;
         }
 
         /// <summary>Tears the online session state down.</summary>
@@ -428,8 +818,8 @@ namespace FrogSmashers.Net
                 NetMessages.RemovePlayerReceived -= OnRemovePlayer;
                 NetMessages.RosterReceived -= OnRoster;
                 NetMessages.WelcomeReceived -= OnWelcome;
-                NetMessages.LobbyReadyToggleReceived -=
-                    OnLobbyReadyToggle;
+                NetMessages.LobbyChoiceReceived -= OnLobbyChoice;
+                NetMessages.ScoreReceived -= OnScore;
                 if (NetworkManager.Singleton != null)
                 {
                     NetworkManager.Singleton.OnClientDisconnectCallback
@@ -441,6 +831,11 @@ namespace FrogSmashers.Net
                 SimulationDriver.Unregister(applier);
                 applier = null;
             }
+            if (pinApplier != null)
+            {
+                SimulationDriver.Unregister(pinApplier);
+                pinApplier = null;
+            }
             AuthoritySync.Stop();
             RollbackNetDriver.Stop();
             NetMessages.Unregister();
@@ -450,6 +845,12 @@ namespace FrogSmashers.Net
             parkedPlayers.Clear();
             welcomePending = false;
             countdown = -1f;
+            scoreHold = -1f;
+            forceLaunch = -1f;
+            scoreMatchOver = false;
+            lobbyReturnActive = false;
+            teamMode = false;
+            localAccepted = false;
             SimulationDriver.Paused = false;
             InputReader.ActiveSource = new LocalInputSource();
         }
@@ -476,23 +877,19 @@ namespace FrogSmashers.Net
                 if (entry.ClientId != manager.LocalClientId)
                 {
                     NetMessages.SendMatchStart(entry.ClientId, seed,
-                        entry.Slot, roster.Count, level);
+                        entry.Slot, roster.Count, level, teamMode);
                 }
             }
             SetupMatchPhase(level);
         }
 
         static void OnMatchStart(
-            ulong seed, int slot, int playerCount, int level)
+            ulong seed, int slot, int playerCount, int level,
+            bool matchTeamMode)
         {
-            if (level == matchOverLevel)
-            {
-                LeaveLocal();
-                return;
-            }
             Seed = seed;
             LocalSlot = slot;
-            currentLevel = level;
+            teamMode = matchTeamMode;
             welcomePending = false;
             if (roster.Count != playerCount)
             {
@@ -509,7 +906,30 @@ namespace FrogSmashers.Net
             }
             for (int i = 0; i < roster.Count; i++)
                 roster[i].ApplyTick = 0;
+            if (level == lobbyReturnLevel)
+            {
+                for (int i = 0; i < roster.Count; i++)
+                    roster[i].Ready = false;
+                SetupLobbyReturn();
+                return;
+            }
+            currentLevel = level;
             SetupMatchPhase(level);
+        }
+
+        /// <summary>Client: rebuilds the playable lobby after a match.</summary>
+        static void SetupLobbyReturn()
+        {
+            CurrentPhase = Phase.Lobby;
+            lobbyReturnActive = true;
+            countdown = -1f;
+            pendingRemovals.Clear();
+            parkedPlayers.Clear();
+            ResetLocalChoice();
+            TearDownSimLayer();
+            BuildActivePlayers();
+            BeginScene(lobbyScene);
+            PushLocalChoice();
         }
 
         static void SetupMatchPhase(int level)
@@ -533,6 +953,11 @@ namespace FrogSmashers.Net
                 SimulationDriver.Unregister(applier);
                 applier = null;
             }
+            if (pinApplier != null)
+            {
+                SimulationDriver.Unregister(pinApplier);
+                pinApplier = null;
+            }
             AuthoritySync.Stop();
             RollbackNetDriver.Stop();
             OnlineLobbyOverlay.Destroy();
@@ -541,7 +966,8 @@ namespace FrogSmashers.Net
         static void BuildActivePlayers()
         {
             GameController.activePlayers.Clear();
-            GameController.isTeamMode = false;
+            GameController.isTeamMode =
+                CurrentPhase == Phase.Match && teamMode;
             GameController.playersCanDropIn = false;
             for (int i = 0; i < roster.Count; i++)
             {
@@ -559,8 +985,14 @@ namespace FrogSmashers.Net
                 parkedPlayers.Remove(slot);
                 return parked;
             }
-            return new Player(InputReader.Device.Gamepad1 + slot,
-                slotColors[slot], slot);
+            var entry = FindBySlot(slot);
+            Color color = entry != null
+                ? entry.Color : slotColors[slot % slotColors.Length];
+            var player = new Player(
+                InputReader.Device.Gamepad1 + slot, color, slot);
+            if (entry != null)
+                player.team = entry.Team;
+            return player;
         }
 
         static void BeginScene(string sceneName)
@@ -576,12 +1008,19 @@ namespace FrogSmashers.Net
             transitionPending = false;
             if (!Active)
                 return;
+            if (CurrentPhase == Phase.Score)
+            {
+                Debug.Log("[OnlineMatch] Score interlude ready");
+                return;
+            }
             SimClock.ResetForNewMatch();
             DeterministicRng.Match.Reseed(Seed);
             RollbackNetDriver.Begin(LocalSlot, IsHost);
             AuthoritySync.Begin(RollbackManager.Active, IsHost);
             applier = new MembershipApplier();
             SimulationDriver.Register(applier);
+            pinApplier = new LobbyPinApplier();
+            SimulationDriver.Register(pinApplier);
 
             Debug.Log($"[OnlineMatch] Scene '{scene.name}' ready:"
                 + $" phase={CurrentPhase} slot={LocalSlot}"
@@ -590,8 +1029,9 @@ namespace FrogSmashers.Net
             if (CurrentPhase == Phase.Lobby)
             {
                 OnlineLobbyOverlay.Create();
-                if (IsHost)
+                if (IsHost || lobbyReturnActive)
                 {
+                    lobbyReturnActive = false;
                     SimulationDriver.Paused = false;
                 }
                 else
@@ -649,6 +1089,7 @@ namespace FrogSmashers.Net
                 ClientId = clientId,
                 ApplyTick = applyTick,
             };
+            DefaultChoice(entry);
             roster.Add(entry);
             var manager = NetworkManager.Singleton;
             foreach (var other in manager.ConnectedClientsIds)
@@ -685,6 +1126,7 @@ namespace FrogSmashers.Net
                 writer.WriteValueSafe((byte)newcomer.Slot);
                 writer.WriteValueSafe(Seed);
                 writer.WriteValueSafe(SimClock.CurrentTick);
+                writer.WriteValueSafe(teamMode);
                 writer.WriteValueSafe((byte)roster.Count);
                 for (int i = 0; i < roster.Count; i++)
                 {
@@ -692,6 +1134,8 @@ namespace FrogSmashers.Net
                     writer.WriteValueSafe(roster[i].Name);
                     writer.WriteValueSafe(roster[i].Ready);
                     writer.WriteValueSafe(roster[i].ApplyTick);
+                    WriteColor(ref writer, roster[i].Color);
+                    writer.WriteValueSafe((byte)roster[i].Team);
                 }
                 SnapshotWire.Write(ref writer, snap);
                 NetMessages.SendLobbyWelcome(clientId, writer);
@@ -708,6 +1152,7 @@ namespace FrogSmashers.Net
             reader.ReadValueSafe(out byte mySlot);
             reader.ReadValueSafe(out ulong seed);
             reader.ReadValueSafe(out uint hostTick);
+            reader.ReadValueSafe(out bool welcomeTeamMode);
             reader.ReadValueSafe(out byte count);
             roster.Clear();
             for (int i = 0; i < count; i++)
@@ -716,23 +1161,30 @@ namespace FrogSmashers.Net
                 reader.ReadValueSafe(out string name);
                 reader.ReadValueSafe(out bool ready);
                 reader.ReadValueSafe(out uint applyTick);
+                Color color = ReadColor(ref reader);
+                reader.ReadValueSafe(out byte team);
                 roster.Add(new RosterEntry
                 {
                     Slot = slot,
                     Name = name,
                     Ready = ready,
                     ApplyTick = applyTick,
+                    Color = color,
+                    Team = (Team)team,
                 });
             }
             SnapshotWire.Read(ref reader, welcomeSnapshot);
+            teamMode = welcomeTeamMode;
             LocalSlot = mySlot;
             Seed = seed;
             welcomeHostTick = hostTick;
             CurrentPhase = Phase.Lobby;
             pendingRemovals.Clear();
             parkedPlayers.Clear();
+            ResetLocalChoice();
             BuildActivePlayersForWelcome();
             BeginScene(lobbyScene);
+            PushLocalChoice();
         }
 
         static void BuildActivePlayersForWelcome()
@@ -756,12 +1208,14 @@ namespace FrogSmashers.Net
         {
             if (IsHost || FindBySlot(slot) != null)
                 return;
-            roster.Add(new RosterEntry
+            var entry = new RosterEntry
             {
                 Slot = slot,
                 Name = name,
                 ApplyTick = applyTick,
-            });
+            };
+            DefaultChoice(entry);
+            roster.Add(entry);
         }
 
         static void OnRemovePlayer(int slot, uint applyTick)
@@ -771,7 +1225,8 @@ namespace FrogSmashers.Net
             pendingRemovals.Add((slot, applyTick));
         }
 
-        static void OnLobbyReadyToggle(ulong clientId)
+        static void OnLobbyChoice(
+            ulong clientId, Color color, Team team, bool ready)
         {
             if (!IsHost || CurrentPhase != Phase.Lobby)
                 return;
@@ -779,11 +1234,32 @@ namespace FrogSmashers.Net
             {
                 if (roster[i].ClientId == clientId)
                 {
-                    roster[i].Ready = !roster[i].Ready;
+                    roster[i].Color = color;
+                    roster[i].Team = team;
+                    roster[i].Ready = ready;
+                    ApplyColorToFrog(roster[i].Slot, color);
                     BroadcastRoster();
                     return;
                 }
             }
+        }
+
+        static void WriteColor(ref FastBufferWriter writer, Color c)
+        {
+            writer.WriteValueSafe((byte)Mathf.Clamp(
+                Mathf.RoundToInt(c.r * 255f), 0, 255));
+            writer.WriteValueSafe((byte)Mathf.Clamp(
+                Mathf.RoundToInt(c.g * 255f), 0, 255));
+            writer.WriteValueSafe((byte)Mathf.Clamp(
+                Mathf.RoundToInt(c.b * 255f), 0, 255));
+        }
+
+        static Color ReadColor(ref FastBufferReader reader)
+        {
+            reader.ReadValueSafe(out byte r);
+            reader.ReadValueSafe(out byte g);
+            reader.ReadValueSafe(out byte b);
+            return new Color(r / 255f, g / 255f, b / 255f);
         }
 
         static void BroadcastRoster()
@@ -796,15 +1272,19 @@ namespace FrogSmashers.Net
                 var writer = new FastBufferWriter(512, Allocator.Temp);
                 using (writer)
                 {
+                    writer.WriteValueSafe(teamMode);
                     writer.WriteValueSafe((byte)roster.Count);
                     for (int i = 0; i < roster.Count; i++)
                     {
                         writer.WriteValueSafe((byte)roster[i].Slot);
                         writer.WriteValueSafe(roster[i].Name);
                         writer.WriteValueSafe(roster[i].Ready);
+                        WriteColor(ref writer, roster[i].Color);
+                        writer.WriteValueSafe((byte)roster[i].Team);
                     }
-                    sbyte cd = countdown >= 0f
-                        ? (sbyte)Mathf.CeilToInt(countdown) : (sbyte)-1;
+                    float timer = LaunchTimer();
+                    sbyte cd = timer >= 0f
+                        ? (sbyte)Mathf.CeilToInt(timer) : (sbyte)-1;
                     writer.WriteValueSafe(cd);
                     NetMessages.SendRoster(clientId, writer);
                 }
@@ -813,21 +1293,32 @@ namespace FrogSmashers.Net
 
         static void OnRoster(FastBufferReader reader)
         {
+            reader.ReadValueSafe(out bool newTeamMode);
             reader.ReadValueSafe(out byte count);
             for (int i = 0; i < count; i++)
             {
                 reader.ReadValueSafe(out byte slot);
                 reader.ReadValueSafe(out string name);
                 reader.ReadValueSafe(out bool ready);
+                Color color = ReadColor(ref reader);
+                reader.ReadValueSafe(out byte team);
                 var entry = FindBySlot(slot);
                 if (entry != null)
                 {
                     entry.Name = name;
                     entry.Ready = ready;
+                    entry.Color = color;
+                    entry.Team = (Team)team;
+                    ApplyColorToFrog(slot, color);
                 }
             }
             reader.ReadValueSafe(out sbyte cd);
             countdown = cd;
+            if (newTeamMode != teamMode)
+            {
+                teamMode = newTeamMode;
+                OnTeamModeChangedLocal();
+            }
         }
 
         static void OnClientDisconnected(ulong clientId)
@@ -996,6 +1487,46 @@ namespace FrogSmashers.Net
                     players.RemoveAt(i);
                     parkedPlayers[slot] = player;
                     return;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Keeps every frog still choosing its color pinned to its spawn
+        /// point (idle) so it stays at the middle of its platform until it
+        /// confirms — and snaps back there on Back. The choosing flag is
+        /// read from the input word, so all peers pin identically and the
+        /// teleport is deterministic. Runs after the characters move.
+        /// </summary>
+        class LobbyPinApplier : ISimTickable
+        {
+            public int SimOrder
+            {
+                get { return 500; }
+            }
+
+            public void SimTick(float dt)
+            {
+                if (CurrentPhase != Phase.Lobby
+                    || RollbackManager.Active == null)
+                {
+                    return;
+                }
+                uint tick = SimClock.CurrentTick;
+                var inputs = RollbackManager.Active.Inputs;
+                var players = GameController.activePlayers;
+                for (int i = 0; i < players.Count; i++)
+                {
+                    var player = players[i];
+                    if (player.character == null)
+                        continue;
+                    ushort packed = inputs.Get(player.sortPriority, tick);
+                    if ((packed & InputPacking.ChoosingBit) != 0)
+                    {
+                        player.character.ResetForSpawn(
+                            global::Terrain.GetSpawnPoint(
+                                player.sortPriority));
+                    }
                 }
             }
         }

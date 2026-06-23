@@ -19,6 +19,14 @@ namespace FrogSmashers.Net.Rollback
         const ushort yBit = 1 << 7;
         const ushort startBit = 1 << 8;
 
+        /// <summary>
+        /// Control-plane flag riding in the input word: the slot is in the
+        /// online lobby's choose-color state (frog pinned to its spawn,
+        /// frozen). Not an InputState field — set directly on the packed
+        /// word by the rollback driver and read by the lobby pin step.
+        /// </summary>
+        public const ushort ChoosingBit = 1 << 9;
+
         /// <summary>Packs current input fields into a bitmask.</summary>
         public static ushort Pack(InputState s)
         {

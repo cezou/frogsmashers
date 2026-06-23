@@ -34,6 +34,7 @@ namespace FrogSmashers.Net.Transport
         static bool isHost;
         static bool injectDesync;
         static bool lobbyMode;
+        static bool teamModeArg;
         static int netPlayers = 2;
         static NetMatchHarness instance;
 
@@ -66,6 +67,7 @@ namespace FrogSmashers.Net.Transport
             isHost = host || lobbyHost;
             lobbyMode = lobbyHost || lobbyJoin;
             injectDesync = HasCliArg("-injectDesync");
+            teamModeArg = HasCliArg("-teamMode");
             netPlayers = GetCliArgInt("-netPlayers", 2);
             var go = new GameObject("NetMatchHarness");
             DontDestroyOnLoad(go);
@@ -108,6 +110,8 @@ namespace FrogSmashers.Net.Transport
             {
                 SimulationDriver.Register(this);
                 OnlineMatch.HostStartLobby();
+                if (teamModeArg)
+                    OnlineMatch.SetTeamMode(true);
                 return;
             }
             var manager = NetworkManager.Singleton;
@@ -116,6 +120,8 @@ namespace FrogSmashers.Net.Transport
             Debug.Log($"[NetMatch] {netPlayers - 1} client(s)"
                 + " connected, starting match");
             SimulationDriver.Register(this);
+            if (teamModeArg)
+                OnlineMatch.SetTeamMode(true);
             OnlineMatch.HostStart(matchSeed);
         }
 
@@ -144,14 +150,14 @@ namespace FrogSmashers.Net.Transport
             if (lobbyReadyAt < 0f)
             {
                 lobbyReadyAt = Time.time + lobbyBrawlSeconds;
-                Debug.Log("[NetMatch] lobby brawl started, ready in"
+                Debug.Log("[NetMatch] lobby brawl started, accept in"
                     + $" {lobbyBrawlSeconds}s");
             }
             else if (Time.time >= lobbyReadyAt)
             {
                 readySent = true;
-                Debug.Log("[NetMatch] toggling ready");
-                OnlineMatch.ToggleLocalReady();
+                Debug.Log("[NetMatch] accepting lobby choice");
+                OnlineMatch.LobbyAccept();
             }
         }
 

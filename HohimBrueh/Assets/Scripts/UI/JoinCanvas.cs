@@ -46,6 +46,8 @@ public class JoinCanvas : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        if (FrogSmashers.Net.OnlineMatch.InLobby)
+            return;
         foreach (var text in texts)
         {
             text.color = Color.Lerp(Color.white, Color.black, Mathf.PingPong(Time.time * 3f, 1f));
