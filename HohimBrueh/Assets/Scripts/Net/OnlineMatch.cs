@@ -418,6 +418,9 @@ namespace FrogSmashers.Net
             int remaining = matchLevels.Length - (currentLevel + 1);
             bool over = remaining <= 0 || MatchClinched(remaining);
             int overallSlot = over ? LeadingSlot() : -1;
+            Debug.Log("[OnlineMatch] Round finished: winnerSlot="
+                + $"{winnerSlot} level={currentLevel} over={over}"
+                + $" next={currentLevel + 1}");
             EnterScore(winnerSlot, over, overallSlot, currentLevel + 1);
         }
 
@@ -496,6 +499,8 @@ namespace FrogSmashers.Net
             if (scoreHold > 0f)
                 return;
             scoreHold = -1f;
+            Debug.Log("[OnlineMatch] Score timer elapsed: matchOver="
+                + $"{scoreMatchOver} next={pendingNextLevel}");
             if (scoreMatchOver)
                 ReturnToLobby();
             else
@@ -870,6 +875,7 @@ namespace FrogSmashers.Net
             Seed = seed;
             NetMessages.CurrentEpoch++;
             var manager = NetworkManager.Singleton;
+            int notified = 0;
             for (int i = 0; i < roster.Count; i++)
             {
                 var entry = roster[i];
@@ -878,8 +884,12 @@ namespace FrogSmashers.Net
                 {
                     NetMessages.SendMatchStart(entry.ClientId, seed,
                         entry.Slot, roster.Count, level, teamMode);
+                    notified++;
                 }
             }
+            Debug.Log("[OnlineMatch] TransitionTo level "
+                + $"{level}, MatchStart sent to {notified} client(s),"
+                + $" epoch={NetMessages.CurrentEpoch}");
             SetupMatchPhase(level);
         }
 
@@ -887,6 +897,9 @@ namespace FrogSmashers.Net
             ulong seed, int slot, int playerCount, int level,
             bool matchTeamMode)
         {
+            Debug.Log("[OnlineMatch] MatchStart received: level "
+                + $"{level} slot={slot} count={playerCount} phase="
+                + $"{CurrentPhase}");
             Seed = seed;
             LocalSlot = slot;
             teamMode = matchTeamMode;
@@ -1010,7 +1023,9 @@ namespace FrogSmashers.Net
                 return;
             if (CurrentPhase == Phase.Score)
             {
-                Debug.Log("[OnlineMatch] Score interlude ready");
+                NetMessages.Register();
+                Debug.Log("[OnlineMatch] Score interlude ready,"
+                    + " messages re-registered");
                 return;
             }
             SimClock.ResetForNewMatch();
@@ -1326,6 +1341,8 @@ namespace FrogSmashers.Net
             if (!Active)
                 return;
             var manager = NetworkManager.Singleton;
+            if (manager == null || manager.ShutdownInProgress)
+                return;
             if (IsHost)
             {
                 var entry = FindByClient(clientId);
