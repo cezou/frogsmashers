@@ -230,12 +230,18 @@ namespace FrogSmashers.Net.Transport
         public static void SendRemovePlayer(
             ulong targetClientId, int slot, uint applyTick)
         {
+            var manager = NetworkManager.Singleton;
+            if (manager == null || manager.ShutdownInProgress
+                || manager.CustomMessagingManager == null)
+            {
+                return;
+            }
             using var writer = new FastBufferWriter(8, Allocator.Temp);
             writer.WriteValueSafe((byte)slot);
             writer.WriteValueSafe(applyTick);
-            NetworkManager.Singleton.CustomMessagingManager
-                .SendNamedMessage(removePlayerMsg, targetClientId,
-                    writer, NetworkDelivery.ReliableSequenced);
+            manager.CustomMessagingManager.SendNamedMessage(
+                removePlayerMsg, targetClientId, writer,
+                NetworkDelivery.ReliableSequenced);
         }
 
         /// <summary>Host → client: lobby roster payload (reliable).</summary>
