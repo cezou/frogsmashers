@@ -68,12 +68,13 @@ sysinfo.txt
 # Crashlytics generated file
 crashlytics-build.properties
 
-# Local planning docs (contain confidential infra details, e.g. OCI IP)
-/AGENTS.md
-/PLANGLOBAL.md
-/PHASE*.md
-/PLANSTEAM.md
+# Secrets: OCI IP/user + SSH key (base64). Never commit.
+/.env
 
-# Local gate/test logs
-/*.log
+# Gate/test logs, anywhere in the tree
+*.log
 
+
+# Build/release artifacts + screenshots
+/FrogSmashers-*.zip
+/shot*.png
