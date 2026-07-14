@@ -1,6 +1,6 @@
-# PLANSTEAM.md — Steam: Relay (SDR), accounts & "OAuth", ELO backend
+# STEAM.md — Steam: Relay (SDR), accounts & "OAuth", ELO backend
 
-> Research doc (June 2026, 3 parallel deep-research agents, ~47 tool-uses, official `partner.steamgames.com` sources preferred). Answers: Steam relay limits vs Unity Relay, relay ↔ stats/auth link, "Steam OAuth" flow for accounts/ELO/rank, OCI as the DB host. No implementation here — feeds Phases 5/6/7 (`docs/plans/PLANGLOBAL.md`).
+> Research doc (June 2026, 3 parallel deep-research agents, ~47 tool-uses, official `partner.steamgames.com` sources preferred). Answers: Steam relay limits vs Unity Relay, relay ↔ stats/auth link, "Steam OAuth" flow for accounts/ELO/rank, OCI as the DB host. No implementation here — feeds the accounts, ranked and Steam GitHub issues (roadmap: `docs/ROADMAP.md`).
 >
 > **Revised July 2026** (deep-research re-check): OCI Always-Free ARM was **halved to 2 OCPU / 12 GB** (was 4/24); "no Steam OAuth2" wording clarified (a legacy partner OAuth2 exists); PAYG upgrade + `pg_dump` backups promoted to explicit launch-blockers. No change to the DB/auth architecture — still self-hosted Postgres on OCI + Steam auth-ticket→JWT.
 
@@ -154,7 +154,7 @@ Steam offers **no OAuth2/OIDC flow suited to a native game client**. (⚠️ nua
   - Steam Leaderboards (10,000 max/title): no custom matchmaking logic, writes come from the client (not server-authoritative unless pushed via Web API from our server).
   - Steam Stats: per-player storage, no server ELO calc or queue orchestration.
   - → The OCI/PostgreSQL backend is justified; Steam Leaderboards optional as a Top "showcase" (pushed from the backend).
-- **⚠️ Client-host anti-cheat**: who reports the match result? The host = cheatable (client authority accepted until Phase 7). Mitigations from the start: **report by ALL clients + cross-check**, disagreement ⇒ match flagged/ignored, ELO gain caps, logging for review. Real fix = dedicated arbiter server (Phase 7, authority code already ready for it).
+- **⚠️ Client-host anti-cheat**: who reports the match result? The host = cheatable (client authority accepted until a dedicated arbiter exists). Mitigations from the start: **report by ALL clients + cross-check**, disagreement ⇒ match flagged/ignored, ELO gain caps, logging for review. Real fix = dedicated arbiter server (tracked as a GitHub issue; authority code already ready for it).
 
 ---
 
@@ -177,7 +177,7 @@ Steam offers **no OAuth2/OIDC flow suited to a native game client**. (⚠️ nua
 
 ### 3.3 API stack & exposure
 
-- **Go or Node/Fastify**: both native ARM64 without issue (language decision = Phase 5, cf. `docs/plans/PLANGLOBAL.md` § Open decisions).
+- **Go or Node/Fastify**: both native ARM64 without issue (language decision made when the auth API starts, cf. `docs/ROADMAP.md` § Open decisions).
 - **Cloudflare free as HTTPS proxy** in front (orange cloud): masks the OCI IP, TLS + L7 anti-DDoS included. **Harden**: VM firewall accepting only Cloudflare IP ranges (otherwise the origin remains findable via DNS history).
 - ⚠️ Cloudflare free proxy covers only HTTP/HTTPS (80/443) — not game UDP. Irrelevant: gameplay goes through SDR/Unity Relay, never OCI.
 
@@ -190,13 +190,13 @@ Steam offers **no OAuth2/OIDC flow suited to a native game client**. (⚠️ nua
 
 ## §4 — Roadmap impact
 
-| Phase | Recommendation from this research |
+| Work item | Recommendation from this research |
 |---|---|
-| **5 — Accounts** | OCI backend: native ARM64 Postgres + Go/Node API + home-grown JWT. **Abstract the identity provider** (`IIdentityProvider` interface: anonymous UGS auth today → Steam ticket in Phase 7+) so the `users` table (PK steamid64, provider/provider_id columns) needn't be redone. **PAYG upgrade + pg_dump backups → Object Storage = launch-blockers** (free tier has no auto DB backup; A1 now 2 OCPU/12 GB). |
-| **6 — Ranked/ELO** | 100% custom backend (queue, ELO calc, ranks). Match report by ALL clients + cross-check from the design. Steam Leaderboards = optional showcase later. "Players in queue" counter = backend, not Steam. |
-| **7+ — Steam** | Buy the App ID ($100). Migrate transport: Unity Relay + Unity Lobby → **SDR + `ISteamMatchmaking`** (community NGO transport to harden, rollback unchanged, rerun network gates). Auth: `GetAuthTicketForWebApi` via **Steamworks.NET** (NOT Facepunch — issue #827) + `AuthenticateUserTicket` on the backend + IP allow-list on the key. Checks `vacbanned`/`publisherbanned`/family sharing. **SDR prototyping possible now under App ID 480**, final validation under the real App ID. |
+| **Accounts** | OCI backend: native ARM64 Postgres + Go/Node API + home-grown JWT. **Abstract the identity provider** (`IIdentityProvider` interface: anonymous UGS auth today → Steam ticket later) so the `users` table (PK steamid64, provider/provider_id columns) needn't be redone. **PAYG upgrade + pg_dump backups → Object Storage = launch-blockers** (free tier has no auto DB backup; A1 now 2 OCPU/12 GB). |
+| **Ranked/ELO** | 100% custom backend (queue, ELO calc, ranks). Match report by ALL clients + cross-check from the design. Steam Leaderboards = optional showcase later. "Players in queue" counter = backend, not Steam. |
+| **Steam** | Buy the App ID ($100). Migrate transport: Unity Relay + Unity Lobby → **SDR + `ISteamMatchmaking`** (community NGO transport to harden, rollback unchanged, rerun network gates). Auth: `GetAuthTicketForWebApi` via **Steamworks.NET** (NOT Facepunch — issue #827) + `AuthenticateUserTicket` on the backend + IP allow-list on the key. Checks `vacbanned`/`publisherbanned`/family sharing. **SDR prototyping possible now under App ID 480**, final validation under the real App ID. |
 | **Lock-in to note** | SDR = players under the Steam client only. If a non-Steam build ever ships (itch.io…), keep Unity Relay as a parallel transport for those players (50 CCU then suffices as a secondary channel). |
 
 ### Bottom-line decision
 
-**SDR is the superior Unity Relay replacement once the game is on Steam**: lifts the 50 CCU cap, free, anti-DDoS/masked IPs, lobbies included, identical client-host P2P architecture (rollback unchanged). The relay has **no** role in accounts/ELO/stats — the account system (Steam ticket → home-grown JWT → Postgres on OCI) is an orthogonal effort that can start in Phase 5 without waiting on Steam.
+**SDR is the superior Unity Relay replacement once the game is on Steam**: lifts the 50 CCU cap, free, anti-DDoS/masked IPs, lobbies included, identical client-host P2P architecture (rollback unchanged). The relay has **no** role in accounts/ELO/stats — the account system (Steam ticket → home-grown JWT → Postgres on OCI) is an orthogonal effort that can start (accounts issues) without waiting on Steam.

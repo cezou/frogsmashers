@@ -4,7 +4,8 @@ Work on this project from another machine. Target: **WSL2 (Ubuntu) on
 Windows**, repo at `/mnt/c/frogsmashers` (`C:\frogsmashers`). Edit/commit from
 WSL; launch the Windows `.exe` builds via interop.
 
-> Method + paths: `AGENTS.md` (repo root). Roadmap: `docs/plans/`. Netcode
+> Method + paths: `AGENTS.md` (repo root). Roadmap: `docs/ROADMAP.md`
+> (tasks: GitHub issues). Netcode
 > rules: `docs/NETCODE.md`. Build/test/ship: the `test` and `ship` skills.
 
 ## 1. Install (the "requirements")
@@ -58,4 +59,4 @@ in git). Load: `set -a; . ./.env; set +a`. Recreate the SSH key per the
 comment in `.env`:
 `echo "$OCI_SSH_KEY_B64" | base64 -d > "$OCI_SSH_KEY" && chmod 600 "$OCI_SSH_KEY"`.
 The build bakes in no server IP (online = Unity Relay); keep it so until
-Cloudflare fronts the backend (Phase 7).
+Cloudflare fronts the backend.

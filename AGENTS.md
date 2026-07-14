@@ -8,8 +8,8 @@ and the working method. Build/test/ship details live in the skills, not here.
 **FrogSmashers** — a 2D local-multiplayer brawler (up to 6 players couch-coop
 on one PC; Xbox/PS/keyboard) on Unity 6 (migrated from 2019.2). Goal: make it
 **playable online** over the internet on top of the local mode. Roadmap:
-`docs/plans/PLANGLOBAL.md`; active phase: `docs/plans/PHASE4.md`. Netcode
-design + rules: `docs/NETCODE.md`.
+`docs/ROADMAP.md`; task tracking: GitHub issues (respect their "Blocked
+by" links). Netcode design + rules: `docs/NETCODE.md`.
 
 ## Environment
 
@@ -80,12 +80,12 @@ absent (often on the other PC).
 
 ## OCI server
 
-An Oracle Cloud ARM64 VM exists but is **not used for gameplay** since Phase 3
-(online = rollback client-host on Unity Relay). It's a Phase 5 backend
-candidate. **Secrets (IP, user, SSH key) are in gitignored `.env`** — load
-with `set -a; . ./.env; set +a`, recreate the key per the comment in `.env`.
-Never commit secrets; the confidential IP is replaced by a Cloudflare hostname
-before any distributed build (Phase 7).
+An Oracle Cloud ARM64 VM exists but is **not used for gameplay** (online =
+rollback client-host on Unity Relay). It's the candidate host for the
+accounts/ELO backend. **Secrets (IP, user, SSH key) are in gitignored
+`.env`** — load with `set -a; . ./.env; set +a`, recreate the key per the
+comment in `.env`. Never commit secrets; the confidential IP is replaced by
+a Cloudflare hostname before any distributed build.
 
 ## Code standard
 
@@ -100,7 +100,7 @@ builds must be warning-clean).
 
 - Branch **`master`**, push direct (no PR).
 - Releases are **`gh` pre-releases** (build is IP-free — gameplay uses Relay);
-  a full public release is gated on Cloudflare (Phase 7). Mechanics + commit/
+  a full public release is gated on Cloudflare. Mechanics + commit/
   release wording: the `ship` skill.
 
 ## Stack

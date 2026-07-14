@@ -60,6 +60,24 @@ every tick (60 Hz):           on remote input arrival:
    `-inputPipeTest`, `-rollbackTest`, `-netMatchHost/Join`,
    `-netLobbyHost/Join`; details in the harness sources).
 
+## Diagnostics (Windows build CLI)
+
+| Flag | Effect |
+|---|---|
+| `-simLatency MS` | simulated RTT (each peer delays its receives by MS/2) |
+| `-simJitter MS` | ± jitter on delay (reliable never reordered) |
+| `-simLoss PCT` | loss on unreliable only (InputMsg) |
+| `-simSeed N` | seed for the network System.Random (never the sim) |
+| `-hashInterval N` | authority hash cadence (default 30; 1 = per tick) |
+| `-dumpTick N` | field-by-field snapshot dump of tick N (host/client diff) |
+| `-netPlayers N` | offline/online harness with N slots (default 2) |
+| `-teamMode` | run gates/matches in team mode |
+| `-authProfile NAME` | distinct anonymous identity (2nd+ instance on one PC) |
+| `-injectDesync` | corrupt a tick to test authority repair |
+
+`RollbackMetrics` logs at match end: rollbacks (p50/p95/max), pace lead,
+bias bursts — asserted by the gates under sim flags.
+
 ## Map
 
 | Layer | Files (`Assets/Scripts/Net/`) |
