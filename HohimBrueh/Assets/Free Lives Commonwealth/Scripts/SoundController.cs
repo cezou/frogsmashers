@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using FrogSmashers.Settings;
+using UnityEngine;
 using System.Collections;
 
 namespace FreeLives
@@ -9,13 +10,16 @@ namespace FreeLives
         private static SoundController instance;
 
         protected void Awake()
-        {   
+        {
             globalSounds = GetComponent<SoundHolder>();
             if (instance != null)
             {
                 GameObject.DestroyImmediate(instance);
             }
             instance = this;
+            var music = GetComponent<AudioSource>();
+            if (music != null)
+                music.outputAudioMixerGroup = GameSettings.MusicGroup;
         }
 
 
@@ -144,6 +148,7 @@ namespace FreeLives
             var audio = go.AddComponent<AudioSource>();
             audio.rolloffMode = AudioRolloffMode.Linear;
             audio.dopplerLevel = 0f;
+            audio.outputAudioMixerGroup = GameSettings.SfxGroup;
             return audio;
         }
 

@@ -160,6 +160,11 @@ public class CharacterAnimator : MonoBehaviour
             rend.color = character.player.color;
             spriteDefaultOffset = rend.transform.localPosition;
         }
+        if (flightAudioSource != null)
+        {
+            flightAudioSource.outputAudioMixerGroup =
+                FrogSmashers.Settings.GameSettings.SfxGroup;
+        }
     }
 
     // Update is called once per frame

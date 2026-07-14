@@ -56,6 +56,7 @@ namespace FrogSmashers.Editor
 
             var (panel, panelText, backBtn) = BuildComingSoonPanel(canvas.transform, font);
             var list = BuildLobbyList(canvas.transform, font);
+            var settingsPanel = SettingsPanelBuilder.Build(canvas.transform, font);
 
             SetupNavigation(localBtn, createBtn, rankedBtn, settingsBtn);
 
@@ -68,6 +69,7 @@ namespace FrogSmashers.Editor
             controller.comingSoonPanel    = panel;
             controller.comingSoonText     = panelText;
             controller.comingSoonBackButton = backBtn;
+            controller.settingsPanel      = settingsPanel;
             controller.lobbyListStatus    = list.status;
             controller.lobbyEntryButtons  = list.entries;
             controller.statusText         = list.bottomStatus;

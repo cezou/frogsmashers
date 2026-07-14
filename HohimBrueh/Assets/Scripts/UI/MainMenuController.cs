@@ -22,6 +22,8 @@ namespace FrogSmashers.UI
         public Text comingSoonText;
         public Button comingSoonBackButton;
 
+        public SettingsPanelController settingsPanel;
+
         public Text lobbyListStatus;
         public Button[] lobbyEntryButtons;
         public Text statusText;
@@ -57,6 +59,16 @@ namespace FrogSmashers.UI
                 EventSystem.current.SetSelectedGameObject(localGameButton.gameObject);
 
             InvokeRepeating(nameof(RefreshLobbies), 0.5f, 4f);
+
+            string cmd = System.Environment.CommandLine;
+            if (cmd.Contains("-shotSettings")
+                || cmd.Contains("-shotControls"))
+            {
+                OnSettings();
+                if (cmd.Contains("-shotControls")
+                    && settingsPanel != null)
+                    settingsPanel.ShowControls();
+            }
         }
 
         void Update()
@@ -75,7 +87,22 @@ namespace FrogSmashers.UI
 
         public void OnLocalGame()    { SceneManager.LoadScene("JoinScreen"); }
         public void OnRankedQueue()  { ShowComingSoon("Ranked Queue"); }
-        public void OnSettings()     { ShowComingSoon("Settings"); }
+
+        public void OnSettings()
+        {
+            if (settingsPanel == null)
+            {
+                ShowComingSoon("Settings");
+                return;
+            }
+            foreach (var b in MenuButtons)
+                if (b != null) b.interactable = false;
+            settingsPanel.Open(settingsButton.gameObject, () =>
+            {
+                foreach (var b in MenuButtons)
+                    if (b != null) b.interactable = true;
+            });
+        }
 
         public async void OnCreateLobby()
         {

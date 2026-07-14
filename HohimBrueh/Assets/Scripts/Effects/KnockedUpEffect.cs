@@ -16,6 +16,12 @@ public class KnockedUpEffect : MonoBehaviour
     {
         spriteRenderer = GetComponent<SpriteRenderer>();
         rotSpeed *= Random.Range(-2f, 2f);
+        var audio = GetComponent<AudioSource>();
+        if (audio != null)
+        {
+            audio.outputAudioMixerGroup =
+                FrogSmashers.Settings.GameSettings.SfxGroup;
+        }
     }
 
     // Update is called once per frame

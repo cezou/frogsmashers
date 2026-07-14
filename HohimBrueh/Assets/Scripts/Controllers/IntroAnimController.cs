@@ -60,6 +60,11 @@ public class IntroAnimController : MonoBehaviour
     {
         animator = GetComponent<Animator>();
         input = new InputState();
+        if (musicAudio != null)
+        {
+            musicAudio.outputAudioMixerGroup =
+                FrogSmashers.Settings.GameSettings.MusicGroup;
+        }
     }
     InputState input;
 
