@@ -13,10 +13,14 @@ namespace FrogSmashers.Settings
         Left, Right, Up, Down, A, B, X, Y, Start
     }
 
-    /// <summary>Binding set owners shown in the controls menu.</summary>
+    /// <summary>Binding set owners shown in the controls menu.
+    /// A single keyboard set: Unity's Input System exposes one
+    /// merged Keyboard device, so extra sets can't map to distinct
+    /// physical keyboards anyway. (The internal map/group name stays
+    /// "Keyboard1" to keep saved binding overrides valid.)</summary>
     public enum ControlDeviceKind
     {
-        Keyboard1, Keyboard2, Xbox, PlayStation, GenericPad
+        Keyboard1, Xbox, PlayStation, GenericPad
     }
 
     /// <summary>
@@ -38,15 +42,9 @@ namespace FrogSmashers.Settings
             "a", "d", "w", "s", "space", "t", "y", "u", "tab"
         };
 
-        static readonly string[] DefaultKb2 =
-        {
-            "leftArrow", "rightArrow", "upArrow", "downArrow",
-            "m", "comma", "period", "slash", "enter"
-        };
-
-        static readonly Dictionary<(int, int, SemanticButton),
+        static readonly Dictionary<(int, SemanticButton),
             ButtonControl> cache =
-                new Dictionary<(int, int, SemanticButton),
+                new Dictionary<(int, SemanticButton),
                     ButtonControl>();
 
         static InputActionAsset asset;
@@ -59,21 +57,19 @@ namespace FrogSmashers.Settings
         }
 
         /// <summary>
-        /// Resolves a semantic button of keyboard set 1 or 2 to the
-        /// bound key control on the current keyboard; null when no
-        /// keyboard is present.
+        /// Resolves a semantic button to the bound key control on
+        /// the current keyboard; null when no keyboard is present.
         /// </summary>
-        public static ButtonControl ResolveKeyboard(int kbIndex,
+        public static ButtonControl ResolveKeyboard(
             SemanticButton button)
         {
             var keyboard = Keyboard.current;
             if (keyboard == null)
                 return null;
-            var key = (keyboard.deviceId, kbIndex, button);
+            var key = (keyboard.deviceId, button);
             if (cache.TryGetValue(key, out var cached))
                 return cached;
-            var control = FindKeyboardControl(keyboard, kbIndex,
-                button);
+            var control = FindKeyboardControl(keyboard, button);
             cache[key] = control;
             return control;
         }
@@ -88,7 +84,7 @@ namespace FrogSmashers.Settings
         {
             if (pad == null)
                 return null;
-            var key = (pad.deviceId, 0, button);
+            var key = (pad.deviceId, button);
             if (cache.TryGetValue(key, out var cached))
                 return cached;
             var control = FindGamepadControl(pad, button);
@@ -284,16 +280,12 @@ namespace FrogSmashers.Settings
         }
 
         static ButtonControl FindKeyboardControl(Keyboard keyboard,
-            int kbIndex, SemanticButton button)
+            SemanticButton button)
         {
-            var kind = kbIndex == 2 ? ControlDeviceKind.Keyboard2
-                : ControlDeviceKind.Keyboard1;
-            string path = EffectivePathFor(kind, button);
+            string path = EffectivePathFor(
+                ControlDeviceKind.Keyboard1, button);
             if (string.IsNullOrEmpty(path))
-            {
-                var defaults = kbIndex == 2 ? DefaultKb2 : DefaultKb1;
-                path = $"<Keyboard>/{defaults[(int)button]}";
-            }
+                path = $"<Keyboard>/{DefaultKb1[(int)button]}";
             return InputControlPath.TryFindControl(keyboard, path)
                 as ButtonControl;
         }
@@ -337,12 +329,8 @@ namespace FrogSmashers.Settings
 
         static string MapName(ControlDeviceKind kind)
         {
-            switch (kind)
-            {
-                case ControlDeviceKind.Keyboard1: return "Keyboard1";
-                case ControlDeviceKind.Keyboard2: return "Keyboard2";
-                default: return "Gamepad";
-            }
+            return kind == ControlDeviceKind.Keyboard1 ? "Keyboard1"
+                : "Gamepad";
         }
 
         /// <summary>Binding group of a binding-set owner.</summary>
@@ -351,7 +339,6 @@ namespace FrogSmashers.Settings
             switch (kind)
             {
                 case ControlDeviceKind.Keyboard1: return "Keyboard1";
-                case ControlDeviceKind.Keyboard2: return "Keyboard2";
                 case ControlDeviceKind.Xbox: return "Xbox";
                 case ControlDeviceKind.PlayStation:
                     return "PlayStation";

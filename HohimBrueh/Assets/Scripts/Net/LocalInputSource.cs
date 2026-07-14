@@ -14,10 +14,7 @@ namespace FrogSmashers.Net
             switch (device)
             {
                 case InputReader.Device.Keyboard1:
-                    ReadKeyboard(target, 1);
-                    break;
-                case InputReader.Device.Keyboard2:
-                    ReadKeyboard(target, 2);
+                    ReadKeyboard(target);
                     break;
                 default:
                     int idx = GamepadIndex(device);
@@ -46,29 +43,29 @@ namespace FrogSmashers.Net
             return control != null && control.isPressed;
         }
 
-        static bool KeyPressed(int kbIndex, SemanticButton button)
+        static bool KeyPressed(SemanticButton button)
         {
             return Pressed(ControlBindingService.ResolveKeyboard(
-                kbIndex, button));
+                button));
         }
 
-        static void ReadKeyboard(InputState s, int kbIndex)
+        static void ReadKeyboard(InputState s)
         {
             s.xAxis = s.yAxis = s.leftTrigger = s.rightTrigger = 0f;
-            s.up    = KeyPressed(kbIndex, SemanticButton.Up);
-            s.down  = KeyPressed(kbIndex, SemanticButton.Down);
-            s.left  = KeyPressed(kbIndex, SemanticButton.Left);
-            s.right = KeyPressed(kbIndex, SemanticButton.Right);
+            s.up    = KeyPressed(SemanticButton.Up);
+            s.down  = KeyPressed(SemanticButton.Down);
+            s.left  = KeyPressed(SemanticButton.Left);
+            s.right = KeyPressed(SemanticButton.Right);
             if (s.left)  s.xAxis -= 1f;
             if (s.right) s.xAxis += 1f;
             if (s.up)    s.yAxis += 1f;
             if (s.down)  s.yAxis -= 1f;
 
-            s.aButton = KeyPressed(kbIndex, SemanticButton.A);
-            s.bButton = KeyPressed(kbIndex, SemanticButton.B);
-            s.xButton = KeyPressed(kbIndex, SemanticButton.X);
-            s.yButton = KeyPressed(kbIndex, SemanticButton.Y);
-            s.start   = KeyPressed(kbIndex, SemanticButton.Start);
+            s.aButton = KeyPressed(SemanticButton.A);
+            s.bButton = KeyPressed(SemanticButton.B);
+            s.xButton = KeyPressed(SemanticButton.X);
+            s.yButton = KeyPressed(SemanticButton.Y);
+            s.start   = KeyPressed(SemanticButton.Start);
         }
 
         public static void ReadGamepad(Gamepad device, InputState s)

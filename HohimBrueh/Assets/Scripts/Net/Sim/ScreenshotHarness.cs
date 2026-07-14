@@ -1,6 +1,7 @@
 using System.Collections;
 using System.IO;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 
 namespace FrogSmashers.Net.Sim
@@ -19,6 +20,18 @@ namespace FrogSmashers.Net.Sim
     /// (default 3; use ~8 for the relay lobby).</item>
     /// <item><c>-shotPath &lt;path&gt;</c> output PNG (default
     /// C:\frogsmashers\shot.png).</item>
+    /// <item><c>-shotPad &lt;xbox|ps&gt;</c> add a virtual gamepad of
+    /// that brand before the scene loads, to verify device-aware
+    /// control prompts (issue #4).</item>
+    /// <item><c>-shotJoin</c> on JoinScreen, join Keyboard1 onto the
+    /// host slot and Gamepad1 onto the second slot so the hint lines
+    /// are visible.</item>
+    /// <item><c>-shotReady</c> with -shotJoin, also confirm the
+    /// joined slots so the Ready hints show.</item>
+    /// <item><c>-shotTeam</c> with -shotJoin, switch to team mode
+    /// first so the shade arrows line shows.</item>
+    /// <item><c>-shotTitle</c> on TitleScreen, skip the intro pan so
+    /// the START prompt is in view.</item>
     /// </list>
     /// Uses <see cref="ScreenCapture.CaptureScreenshot(string)"/> so the
     /// full frame (3D + overlay UI) is captured, then quits once the file
@@ -29,6 +42,10 @@ namespace FrogSmashers.Net.Sim
         static string shotScene;
         static float shotDelay = 3f;
         static string shotPath = @"C:\frogsmashers\shot.png";
+        static bool shotJoin;
+        static bool shotReady;
+        static bool shotTeam;
+        static bool shotTitle;
 
         [RuntimeInitializeOnLoadMethod(
             RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -39,9 +56,36 @@ namespace FrogSmashers.Net.Sim
             shotScene = GetCliArg("-shotScene", null);
             shotDelay = GetCliArgFloat("-shotDelay", 3f);
             shotPath = GetCliArg("-shotPath", shotPath);
+            shotJoin = HasCliArg("-shotJoin");
+            shotReady = HasCliArg("-shotReady");
+            shotTeam = HasCliArg("-shotTeam");
+            shotTitle = HasCliArg("-shotTitle");
+            AddVirtualPad(GetCliArg("-shotPad", null));
             var go = new GameObject("ScreenshotHarness");
             DontDestroyOnLoad(go);
             go.AddComponent<ScreenshotHarness>();
+        }
+
+        static void AddVirtualPad(string brand)
+        {
+            if (string.IsNullOrEmpty(brand))
+                return;
+            string[] layouts = brand == "ps"
+                ? new[] { "DualShock4GamepadHID", "DualShockGamepad" }
+                : new[] { "XInputControllerWindows", "XInputController" };
+            foreach (var layout in layouts)
+            {
+                try
+                {
+                    InputSystem.AddDevice(layout);
+                    Debug.Log($"[Screenshot] Added virtual pad '{layout}'");
+                    return;
+                }
+                catch (System.Exception)
+                {
+                }
+            }
+            Debug.LogWarning($"[Screenshot] No pad layout for '{brand}'");
         }
 
         IEnumerator Start()
@@ -51,6 +95,37 @@ namespace FrogSmashers.Net.Sim
                 Debug.Log($"[Screenshot] Loading scene '{shotScene}'");
                 SceneManager.LoadScene(shotScene);
                 yield return null;
+            }
+            if (shotJoin)
+            {
+                yield return null;
+                if (shotTeam && !GameController.isTeamMode)
+                    GameController.ToggleTeamMode();
+                bool kb = GameController.DebugAssignSlot(0,
+                    FreeLives.InputReader.Device.Keyboard1);
+                bool pad = GameController.DebugAssignSlot(1,
+                    FreeLives.InputReader.Device.Gamepad1);
+                Debug.Log($"[Screenshot] Joined kb1={kb} pad1={pad}");
+                if (shotReady)
+                {
+                    yield return null;
+                    var canvases = GameController.GetJoinCanvases();
+                    foreach (var joinCanvas in canvases)
+                    {
+                        if (joinCanvas != null
+                            && joinCanvas.HasAssignedPlayer())
+                            joinCanvas.ConfirmSelection();
+                    }
+                    Debug.Log("[Screenshot] Confirmed joined slots");
+                }
+            }
+            if (shotTitle)
+            {
+                yield return null;
+                var intro = FindFirstObjectByType<IntroAnimController>();
+                if (intro != null)
+                    intro.SkipToTitle();
+                Debug.Log($"[Screenshot] Title skip={(intro != null)}");
             }
             yield return new WaitForSecondsRealtime(shotDelay);
 

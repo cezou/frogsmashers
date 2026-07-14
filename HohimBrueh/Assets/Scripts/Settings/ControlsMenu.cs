@@ -4,12 +4,13 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
+using PromptAction = FrogSmashers.UI.ControlPromptIcon.PromptAction;
 
 namespace FrogSmashers.Settings
 {
     /// <summary>
     /// Controls submenu of the settings panel: one tab per binding
-    /// set (Keyboard 1/2, Xbox, PlayStation, plus Other Gamepad when
+    /// set (Keyboard, Xbox, PlayStation, plus Other Gamepad when
     /// such a pad is connected), one rebindable row per semantic
     /// button. Rows are built at runtime so labels always reflect
     /// the effective bindings.
@@ -52,6 +53,9 @@ namespace FrogSmashers.Settings
         readonly List<(SemanticButton button, Button widget,
             Text value)> rows =
                 new List<(SemanticButton, Button, Text)>();
+        readonly List<GameObject> rowShells = new List<GameObject>();
+        readonly List<(PromptAction action, Image icon)> rowIcons =
+            new List<(PromptAction, Image)>();
 
         ControlDeviceKind currentTab = ControlDeviceKind.Keyboard1;
         float statusTimeLeft;
@@ -91,8 +95,7 @@ namespace FrogSmashers.Settings
             {
                 ControlDeviceKind.Keyboard1,
                 ControlDeviceKind.Xbox,
-                ControlDeviceKind.PlayStation,
-                ControlDeviceKind.Keyboard2
+                ControlDeviceKind.PlayStation
             };
             if (GenericPadConnected())
                 kinds.Add(ControlDeviceKind.GenericPad);
@@ -112,9 +115,11 @@ namespace FrogSmashers.Settings
 
         void BuildRows()
         {
-            foreach (var (_, widget, _) in rows)
-                Destroy(widget.transform.parent.gameObject);
+            foreach (var shell in rowShells)
+                Destroy(shell);
+            rowShells.Clear();
             rows.Clear();
+            rowIcons.Clear();
 
             var buttons = IsPadTab() ? PadRows : KeyboardRows;
             float top = 210f;
@@ -122,7 +127,10 @@ namespace FrogSmashers.Settings
             int index = 0;
             if (IsPadTab())
             {
-                MakeRowShell("MOVE", "LEFT STICK / DPAD", top);
+                var moveShell = MakeRowShell("MOVE",
+                    "LEFT STICK / DPAD", top);
+                rowIcons.Add(((PromptAction)SemanticButton.Left,
+                    MakeRowIcon(moveShell)));
                 index = 1;
             }
             foreach (var button in buttons)
@@ -133,17 +141,49 @@ namespace FrogSmashers.Settings
                 widget.onClick.AddListener(
                     () => StartRebind(captured));
                 rows.Add((captured, widget, value));
+                rowIcons.Add(((PromptAction)captured, MakeRowIcon(
+                    (RectTransform)widget.transform.parent)));
                 index++;
             }
+            var modeShell = MakeRowShell("CHANGE MODE",
+                ChangeModeValue(), top - index * spacing);
+            rowIcons.Add((PromptAction.Select, MakeRowIcon(modeShell)));
             WireNavigation();
         }
 
+        /// <summary>Fixed value of the lobby-only CHANGE MODE row,
+        /// deliberately not rebindable (pad select / keyboard Tab,
+        /// mirroring the online lobby).</summary>
+        string ChangeModeValue()
+        {
+            switch (currentTab)
+            {
+                case ControlDeviceKind.Keyboard1:
+                    return "TAB";
+                case ControlDeviceKind.PlayStation:
+                    return "SHARE";
+                default:
+                    return "SELECT";
+            }
+        }
+
+        /// <summary>Refreshes value labels and their prompt sprites;
+        /// exotic keys without a sprite keep the text only.</summary>
         void RefreshRows()
         {
             foreach (var (button, _, value) in rows)
             {
                 value.text = ControlBindingService.DisplayNameFor(
                     currentTab, button).ToUpper();
+            }
+            foreach (var (action, icon) in rowIcons)
+            {
+                string name = FrogSmashers.UI.ControlPromptIcon
+                    .SpriteNameFor(currentTab, action);
+                bool found = FrogSmashers.UI.ControlPromptSprites
+                    .TryGet(name, out var sprite);
+                icon.sprite = sprite;
+                icon.enabled = found;
             }
         }
 
@@ -165,6 +205,11 @@ namespace FrogSmashers.Settings
                 if (b == button)
                     value.text = "PRESS  A  KEY . . .";
             }
+            foreach (var (action, icon) in rowIcons)
+            {
+                if (action == (PromptAction)button)
+                    icon.enabled = false;
+            }
             if (EventSystem.current != null)
                 EventSystem.current.sendNavigationEvents = false;
             RebindController.StartRebind(currentTab, button,
@@ -174,8 +219,6 @@ namespace FrogSmashers.Settings
         void OnRebindDone(RebindResult result)
         {
             RefreshRows();
-            if (result == RebindResult.DuplicateRejected)
-                ShowStatus("KEY  USED  BY  THE  OTHER  KEYBOARD");
             StartCoroutine(ReenableNavigation());
         }
 
@@ -286,9 +329,7 @@ namespace FrogSmashers.Settings
             switch (kind)
             {
                 case ControlDeviceKind.Keyboard1:
-                    return "KEYBOARD 1";
-                case ControlDeviceKind.Keyboard2:
-                    return "KEYBOARD 2";
+                    return "KEYBOARD";
                 case ControlDeviceKind.Xbox: return "XBOX";
                 case ControlDeviceKind.PlayStation:
                     return "PLAYSTATION";
@@ -320,11 +361,31 @@ namespace FrogSmashers.Settings
             return (widget, value);
         }
 
+        /// <summary>Prompt sprite slot between a row's label and its
+        /// value; 2:1 so wide key sprites keep their aspect.</summary>
+        Image MakeRowIcon(RectTransform shell)
+        {
+            var go = new GameObject("PromptIcon",
+                typeof(RectTransform), typeof(Image));
+            var rt = (RectTransform)go.transform;
+            rt.SetParent(shell, false);
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = new Vector2(-10f, 0f);
+            rt.sizeDelta = new Vector2(108f, 54f);
+            var image = go.GetComponent<Image>();
+            image.preserveAspect = true;
+            image.raycastTarget = false;
+            image.enabled = false;
+            return image;
+        }
+
         RectTransform MakeRowShell(string label, string fixedValue,
             float y)
         {
             var go = new GameObject($"Row_{label}",
                 typeof(RectTransform));
+            rowShells.Add(go);
             var rt = (RectTransform)go.transform;
             rt.SetParent(rowsRoot, false);
             rt.anchorMin = new Vector2(0.5f, 0.5f);

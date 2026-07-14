@@ -33,19 +33,6 @@ namespace FrogSmashers.EditorTests
             ("Start", "<Keyboard>/tab")
         };
 
-        static readonly (string action, string path)[] Kb2Defaults =
-        {
-            ("Left", "<Keyboard>/leftArrow"),
-            ("Right", "<Keyboard>/rightArrow"),
-            ("Up", "<Keyboard>/upArrow"),
-            ("Down", "<Keyboard>/downArrow"),
-            ("A", "<Keyboard>/m"),
-            ("B", "<Keyboard>/comma"),
-            ("X", "<Keyboard>/period"),
-            ("Y", "<Keyboard>/slash"),
-            ("Start", "<Keyboard>/enter")
-        };
-
         static readonly (string action, string control)[]
             PadDefaults =
         {
@@ -101,8 +88,6 @@ namespace FrogSmashers.EditorTests
             var asset = LoadActions();
             AssertMapDefaults(asset, "Keyboard1", "Keyboard1",
                 Kb1Defaults);
-            AssertMapDefaults(asset, "Keyboard2", "Keyboard2",
-                Kb2Defaults);
             foreach (var (action, control) in PadDefaults)
             {
                 AssertBindingPath(asset, "Gamepad", action, "Xbox",

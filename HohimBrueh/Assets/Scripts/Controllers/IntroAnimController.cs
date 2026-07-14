@@ -46,8 +46,18 @@ public class IntroAnimController : MonoBehaviour
 
    
     public void StartCameraPan()
-    {   
+    {
         cameraPanning = true;
+    }
+
+    /// <summary>Skips the intro straight to the title view (start
+    /// press, or the screenshot harness).</summary>
+    public void SkipToTitle()
+    {
+        animator.CrossFade(animator.GetCurrentAnimatorStateInfo(-1).shortNameHash, 0f, 0, 0.95f);
+        cameraPanning = true;
+        cameraPanDelay = 0f;
+        cameraPosM = 1f;
     }
 
     public void StartMusic()
@@ -94,10 +104,7 @@ public class IntroAnimController : MonoBehaviour
         {
             if (input.start && !input.wasStart)
             {
-                animator.CrossFade(animator.GetCurrentAnimatorStateInfo(-1).shortNameHash, 0f, 0, 0.95f);
-                cameraPanning = true;
-                cameraPanDelay = 0f;
-                cameraPosM = 1f;
+                SkipToTitle();
             }
         }
         if (cameraPosM > 0.55f)

@@ -8,10 +8,12 @@ namespace FrogSmashers.Net.UI
     /// Drives the local player's real <see cref="JoinCanvas"/> in the
     /// online lobby: the same choose-color icons, with the on-platform frog
     /// frozen and live-recoloring until the player confirms. Reads the
-    /// local device directly (control plane, not the rollback buffer);
-    /// JoinCanvas's own Update is suppressed online. Buttons match local so
-    /// the default icon prompts are accurate: B change color/team, L/R
-    /// shade, X confirm, Y back. Host-only SELECT toggles team mode.
+    /// local device directly (control plane, not the rollback buffer)
+    /// through the rebindable keyboard/pad bindings so the icon prompts
+    /// stay truthful; JoinCanvas's own Update is suppressed online.
+    /// B change color/team, L/R shade, X confirm, Y back (un-accept).
+    /// Host-only SELECT toggles team mode, and only while the host is
+    /// still selecting.
     /// </summary>
     public class OnlineLobbyOverlay : MonoBehaviour
     {
@@ -23,7 +25,6 @@ namespace FrogSmashers.Net.UI
         bool lastAccepted;
         bool lastTeamMode;
         GUIStyle title;
-        GUIStyle hint;
 
         /// <summary>Creates the controller for the current lobby.</summary>
         public static void Create()
@@ -67,8 +68,21 @@ namespace FrogSmashers.Net.UI
             canvas.gameObject.SetActive(true);
             if (canvas.frogImage != null)
                 canvas.frogImage.enabled = false;
+            canvas.ApplyOnlineSelectionLayout();
+            SetChangeModeLineVisible(OnlineMatch.IsHost);
             lastAccepted = !OnlineMatch.LocalAccepted;
             lastTeamMode = !OnlineMatch.TeamModeEnabled;
+        }
+
+        void SetChangeModeLineVisible(bool visible)
+        {
+            if (canvas.changeModeObjects == null)
+                return;
+            foreach (var obj in canvas.changeModeObjects)
+            {
+                if (obj != null)
+                    obj.SetActive(visible);
+            }
         }
 
         void ReadControlPlane()
@@ -76,11 +90,10 @@ namespace FrogSmashers.Net.UI
             ReadDevices(input);
             bool select = SelectPressed();
 
-            if (select && !wasSelect && OnlineMatch.IsHost)
-                OnlineMatch.HostToggleTeamMode();
-
             if (!OnlineMatch.LocalAccepted)
             {
+                if (select && !wasSelect && OnlineMatch.IsHost)
+                    OnlineMatch.HostToggleTeamMode();
                 if (input.bButton && !wasB)
                     OnlineMatch.LobbyCycleChoice();
                 if (input.xButton && !wasX)
@@ -106,15 +119,20 @@ namespace FrogSmashers.Net.UI
             var pad = Gamepad.current;
             if (pad != null)
                 LocalInputSource.ReadGamepad(pad, s);
-            var kb = Keyboard.current;
-            if (kb != null)
-            {
-                s.bButton |= kb.cKey.isPressed;
-                s.xButton |= kb.enterKey.isPressed;
-                s.yButton |= kb.backspaceKey.isPressed;
-                s.right |= kb.rightArrowKey.isPressed;
-                s.left |= kb.leftArrowKey.isPressed;
-            }
+            s.bButton |= KeyHeld(FrogSmashers.Settings.SemanticButton.B);
+            s.xButton |= KeyHeld(FrogSmashers.Settings.SemanticButton.X);
+            s.yButton |= KeyHeld(FrogSmashers.Settings.SemanticButton.Y);
+            s.right |= KeyHeld(FrogSmashers.Settings.SemanticButton.Right);
+            s.left |= KeyHeld(FrogSmashers.Settings.SemanticButton.Left);
+        }
+
+        /// <summary>Reads the rebindable keyboard binding so the
+        /// prompt sprites tell the truth.</summary>
+        static bool KeyHeld(FrogSmashers.Settings.SemanticButton button)
+        {
+            var control = FrogSmashers.Settings.ControlBindingService
+                .ResolveKeyboard(button);
+            return control != null && control.isPressed;
         }
 
         static bool SelectPressed()
@@ -135,6 +153,7 @@ namespace FrogSmashers.Net.UI
             {
                 lastAccepted = accepted;
                 lastTeamMode = team;
+                GameController.SetModeText(team);
                 if (canvas.joinPromptCanvas != null)
                     canvas.joinPromptCanvas.enabled = false;
                 if (canvas.chooseColorCanvas != null)
@@ -154,16 +173,9 @@ namespace FrogSmashers.Net.UI
             if (!OnlineMatch.InLobby)
                 return;
             EnsureStyles();
-            if (OnlineMatch.IsHost)
-            {
-                string mode = OnlineMatch.TeamModeEnabled
-                    ? "TEAMS" : "FREE FOR ALL";
-                GUI.Label(new Rect(24f, 24f, 900f, 36f),
-                    $"MODE: {mode}   —   SELECT to change", hint);
-            }
             if (OnlineMatch.Countdown >= 0f)
             {
-                GUI.Label(new Rect(24f, 64f, 700f, 44f),
+                GUI.Label(new Rect(24f, 24f, 700f, 44f),
                     "STARTING IN "
                     + $"{Mathf.CeilToInt(OnlineMatch.Countdown)}", title);
             }
@@ -179,12 +191,6 @@ namespace FrogSmashers.Net.UI
                 fontStyle = FontStyle.Bold,
             };
             title.normal.textColor = new Color(1f, 0.85f, 0.25f);
-            hint = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 22,
-                fontStyle = FontStyle.Bold,
-            };
-            hint.normal.textColor = Color.white;
         }
     }
 }

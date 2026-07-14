@@ -119,8 +119,6 @@ public class GameController : MonoBehaviour, ISimTickable
             inactivePlayers.Add(p);
             p = new Player(FreeLives.InputReader.Device.Keyboard1, playerColors[4], 4);
             inactivePlayers.Add(p);
-            p = new Player(FreeLives.InputReader.Device.Keyboard2, playerColors[5], 5);
-            inactivePlayers.Add(p);
 
         }
         if (!isJoinScreen || FrogSmashers.Net.OnlineMatch.InLobby)
@@ -197,12 +195,73 @@ public class GameController : MonoBehaviour, ISimTickable
         return instance != null ? instance.joinCanvas : null;
     }
 
+    /// <summary>
+    /// Device kinds that could still join the local lobby: one entry
+    /// per connected-pad brand whose slot is free, plus the keyboard
+    /// while its slot is free. Drives the JOIN prompt glyphs.
+    /// </summary>
+    public static void GetAvailableJoinKinds(
+        List<FrogSmashers.Settings.ControlDeviceKind> result)
+    {
+        result.Clear();
+        if (inactivePlayers == null)
+            return;
+        var pads = UnityEngine.InputSystem.Gamepad.all;
+        foreach (var player in inactivePlayers)
+        {
+            if (player.inputDevice == FreeLives.InputReader.Device.Keyboard1)
+            {
+                if (UnityEngine.InputSystem.Keyboard.current != null)
+                    result.Add(FrogSmashers.Settings.ControlDeviceKind.Keyboard1);
+                continue;
+            }
+            int idx = (int)player.inputDevice
+                - (int)FreeLives.InputReader.Device.Gamepad1;
+            if (idx < 0 || idx >= pads.Count)
+                continue;
+            var kind = FrogSmashers.Settings.ControlBindingService.KindOf(pads[idx]);
+            if (!result.Contains(kind))
+                result.Add(kind);
+        }
+    }
+
+    /// <summary>Screenshot/test hook: joins the pooled player of a
+    /// device slot onto a join canvas, as if they pressed JOIN.</summary>
+    public static bool DebugAssignSlot(int canvasIndex, FreeLives.InputReader.Device device)
+    {
+        if (instance == null || instance.joinCanvas == null
+            || canvasIndex < 0 || canvasIndex >= instance.joinCanvas.Length
+            || instance.joinCanvas[canvasIndex].HasAssignedPlayer())
+            return false;
+        var player = inactivePlayers?.Find(p => p.inputDevice == device);
+        if (player == null)
+            return false;
+        inactivePlayers.Remove(player);
+        instance.joinCanvas[canvasIndex].AssignPlayer(player);
+        return true;
+    }
+
+    /// <summary>Bottom-band mode label of the join screen; also
+    /// driven by the online lobby (OnlineLobbyOverlay).</summary>
+    public static void SetModeText(bool teamMode)
+    {
+        if (instance != null)
+            instance.ApplyModeText(teamMode);
+    }
+
+    /// <summary>Instance path: Awake calls this before `instance`
+    /// is set.</summary>
+    void ApplyModeText(bool teamMode)
+    {
+        if (joinGameModeText != null)
+            joinGameModeText.text = teamMode ? "TEAM" : "FREE  FOR  ALL";
+    }
+
     public static void ToggleTeamMode()
     {
         if (!allowTeamMode || instance == null) return;
         isTeamMode = !isTeamMode;
-        if (instance.joinGameModeText != null)
-            instance.joinGameModeText.text = isTeamMode ? "TEAM" : "FREE  FOR  ALL";
+        SetModeText(isTeamMode);
         if (instance.joinCanvas != null)
         {
             foreach (var jc in instance.joinCanvas)
@@ -656,8 +715,7 @@ public class GameController : MonoBehaviour, ISimTickable
         availableColors = new List<Color>();
         availableColors.AddRange(playerColors);
 
-        if (joinGameModeText != null)
-            joinGameModeText.text = isTeamMode ? "TEAM" : "FREE  FOR  ALL";
+        ApplyModeText(isTeamMode);
     }
 
     bool CheckReadyPlayers()

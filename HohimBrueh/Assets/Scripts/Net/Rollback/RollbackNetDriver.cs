@@ -142,8 +142,6 @@ namespace FrogSmashers.Net.Rollback
                 return 0;
             poller.Read(InputReader.Device.Keyboard1, keyboard);
             ushort packed = InputPacking.Pack(keyboard);
-            poller.Read(InputReader.Device.Keyboard2, keyboard);
-            packed |= InputPacking.Pack(keyboard);
             var pad = UnityEngine.InputSystem.Gamepad.current;
             if (pad != null)
             {

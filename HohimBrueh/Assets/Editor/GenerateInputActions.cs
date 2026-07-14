@@ -9,10 +9,11 @@ namespace FrogSmashers.Editor
 {
     /// <summary>
     /// Generates Assets/Resources/FrogControls.inputactions, the
-    /// rebindable source of gameplay bindings: maps Keyboard1 and
-    /// Keyboard2 (full button sets on one shared keyboard) and map
-    /// Gamepad with one binding per brand group (Xbox, PlayStation,
-    /// Generic). All ids derive deterministically from stable seed
+    /// rebindable source of gameplay bindings: map Keyboard1 (the
+    /// single keyboard set — Unity exposes one merged Keyboard
+    /// device) and map Gamepad with one binding per brand group
+    /// (Xbox, PlayStation, Generic). All ids derive deterministically
+    /// from stable seed
     /// strings so a regeneration keeps every saved binding override
     /// valid (overrides are matched by binding id).
     /// </summary>
@@ -29,12 +30,6 @@ namespace FrogSmashers.Editor
         static readonly string[] Kb1Paths =
         {
             "a", "d", "w", "s", "space", "t", "y", "u", "tab"
-        };
-
-        static readonly string[] Kb2Paths =
-        {
-            "leftArrow", "rightArrow", "upArrow", "downArrow",
-            "m", "comma", "period", "slash", "enter"
         };
 
         static readonly string[] PadButtons =
@@ -55,8 +50,6 @@ namespace FrogSmashers.Editor
             sb.Append("{\n    \"name\": \"FrogControls\",\n");
             sb.Append("    \"maps\": [\n");
             AppendKeyboardMap(sb, "Keyboard1", Kb1Paths);
-            sb.Append(",\n");
-            AppendKeyboardMap(sb, "Keyboard2", Kb2Paths);
             sb.Append(",\n");
             AppendGamepadMap(sb);
             sb.Append("\n    ],\n");
@@ -162,8 +155,6 @@ namespace FrogSmashers.Editor
         {
             sb.Append("    \"controlSchemes\": [\n");
             AppendScheme(sb, "Keyboard1", "<Keyboard>");
-            sb.Append(",\n");
-            AppendScheme(sb, "Keyboard2", "<Keyboard>");
             sb.Append(",\n");
             AppendScheme(sb, "Xbox", "<XInputController>");
             sb.Append(",\n");

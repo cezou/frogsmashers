@@ -6,7 +6,7 @@ namespace FrogSmashers.Settings
     /// <summary>Outcome of an interactive rebind attempt.</summary>
     public enum RebindResult
     {
-        Success, Cancelled, DuplicateRejected
+        Success, Cancelled
     }
 
     /// <summary>
@@ -14,9 +14,7 @@ namespace FrogSmashers.Settings
     /// asset. Capture is restricted to the device family of the
     /// binding set being edited, cancels on Escape, times out after
     /// five seconds. Duplicates within one set swap with the previous
-    /// binding (no action is ever left unbound); a key already used
-    /// by the other keyboard set is rejected because both players
-    /// share one physical keyboard.
+    /// binding (no action is ever left unbound).
     /// </summary>
     public static class RebindController
     {
@@ -75,19 +73,10 @@ namespace FrogSmashers.Settings
         {
             Dispose();
             string newPath = action.bindings[index].effectivePath;
-            var result = RebindResult.Success;
-            if (IsUsedByOtherKeyboard(kind, button, newPath))
-            {
-                action.ApplyBindingOverride(index, oldPath);
-                result = RebindResult.DuplicateRejected;
-            }
-            else
-            {
-                SwapSameSetDuplicate(kind, button, newPath, oldPath);
-            }
+            SwapSameSetDuplicate(kind, button, newPath, oldPath);
             ControlBindingService.SaveOverrides();
             ControlBindingService.InvalidateCache();
-            onDone?.Invoke(result);
+            onDone?.Invoke(RebindResult.Success);
         }
 
         static void Cancel(Action<RebindResult> onDone)
@@ -102,30 +91,6 @@ namespace FrogSmashers.Settings
             operation?.Dispose();
             operation = null;
             IsListening = false;
-        }
-
-        static bool IsUsedByOtherKeyboard(ControlDeviceKind kind,
-            SemanticButton button, string newPath)
-        {
-            ControlDeviceKind other;
-            if (kind == ControlDeviceKind.Keyboard1)
-                other = ControlDeviceKind.Keyboard2;
-            else if (kind == ControlDeviceKind.Keyboard2)
-                other = ControlDeviceKind.Keyboard1;
-            else
-                return false;
-            foreach (SemanticButton b in
-                Enum.GetValues(typeof(SemanticButton)))
-            {
-                var action = ControlBindingService.FindBinding(other,
-                    b, out int index);
-                if (action == null || index < 0)
-                    continue;
-                if (SamePath(action.bindings[index].effectivePath,
-                    newPath))
-                    return true;
-            }
-            return false;
         }
 
         static void SwapSameSetDuplicate(ControlDeviceKind kind,
