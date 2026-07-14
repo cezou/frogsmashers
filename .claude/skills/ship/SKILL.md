@@ -52,8 +52,10 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 - **type**: `feat` / `fix` / `docs` / `refactor` / `test` / `perf` / `build` /
   `ci` / `chore`. **scope** = touched area (`netcode`, `lobby`, `sim`, `ui`,
   `dev-setup`, …).
-- One commit per distinct change (squash intermediate steps). Sign every
-  commit with the `Co-Authored-By` trailer.
+- **One commit per feature/task** (squash intermediate steps). If more
+  work lands on a task that is already committed, amend/squash it into
+  that single commit — never stack follow-up commits on the same task.
+  Sign every commit with the `Co-Authored-By` trailer.
 
 ## 5a. push / ship
 ```bash

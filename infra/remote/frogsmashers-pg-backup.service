@@ -1,0 +1,15 @@
+[Unit]
+Description=FrogSmashers PostgreSQL backup to OCI Object Storage
+Wants=network-online.target
+After=postgresql.service network-online.target
+
+[Service]
+Type=oneshot
+User=postgres
+Group=postgres
+EnvironmentFile=-/etc/frogsmashers/backup.env
+ExecStart=/usr/local/bin/frogsmashers-pg-backup
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
