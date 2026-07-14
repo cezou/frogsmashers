@@ -99,6 +99,9 @@ builds must be warning-clean).
 ## Git
 
 - Branch **`master`**, push direct (no PR).
+- **One commit per feature/task.** If more work lands on a task that is
+  already committed, `git commit --amend` / squash it into that single
+  commit — never stack follow-up commits on the same task.
 - Releases are **`gh` pre-releases** (build is IP-free — gameplay uses Relay);
   a full public release is gated on Cloudflare. Mechanics + commit/
   release wording: the `ship` skill.
