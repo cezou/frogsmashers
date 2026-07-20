@@ -74,6 +74,8 @@ public class Fly : MonoBehaviour, ISimTickable
         h = StateHash.Mix(h, velocity);
         h = StateHash.Mix(h, targetVelocity);
         h = StateHash.Mix(h, BeingIngested);
+        h = StateHash.Mix(h, ingestedBy != null && ingestedBy.player != null
+            ? GameController.activePlayers.IndexOf(ingestedBy.player) : -1);
         h = StateHash.Mix(h, ingestTimeout);
         h = StateHash.Mix(h, updateDirectionDelay);
         return h;

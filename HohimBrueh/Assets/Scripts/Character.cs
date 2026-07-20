@@ -498,6 +498,9 @@ public class Character : MonoBehaviour, ISimTickable
         h = StateHash.Mix(h, wasHitDownwards);
         h = StateHash.Mix(h, wasBouncingBeforeTongue);
         h = StateHash.Mix(h, WallSliding);
+        h = StateHash.Mix(h, (int)WallSlideSide);
+        h = StateHash.Mix(h, lastHitByPlayer != null
+            ? GameController.activePlayers.IndexOf(lastHitByPlayer) : -1);
         h = StateHash.Mix(h, IngestedFly);
         h = StateHash.Mix(h, ingestingFly != null);
         return h;
@@ -544,7 +547,7 @@ public class Character : MonoBehaviour, ISimTickable
             if (input.down)
                 dir -= Vector2.up;
 
-            GetHit(dir, UnityEngine.Random.value, this);
+            GetHit(dir, DeterministicRng.Match.Value, this);
         }
 #endif
 
@@ -589,7 +592,9 @@ public class Character : MonoBehaviour, ISimTickable
                 if (lastHitByPlayer != null)
                     EffectsController.CreateSideScorePlum(transform.position, killedOnSide, hitsTaken == 0 ? 1 : hitsTaken, lastHitByPlayer.color);
                 else
-                    EffectsController.CreateSideScorePlum(transform.position, killedOnSide, -1, player.color);
+                    EffectsController.CreateSideScorePlum(
+                        transform.position, killedOnSide, -1,
+                        player != null ? player.color : Color.white);
             }
             if (transform.position.y > Terrain.TopKillPoint)
             {
@@ -613,7 +618,6 @@ public class Character : MonoBehaviour, ISimTickable
             else
             {
                 gameObject.SetActive(false);
-                Destroy(gameObject);
             }
         }
     }
@@ -998,7 +1002,8 @@ public class Character : MonoBehaviour, ISimTickable
 
         if (GameController.isTeamMode)
         {
-            if (player.team != hitChar.player.team)
+            if (player == null || hitChar.player == null
+                || player.team != hitChar.player.team)
                 hitChar.GetHit(hitDir, attackChargeM + ingestPowerBoost, this);
         }
         else
@@ -1012,7 +1017,8 @@ public class Character : MonoBehaviour, ISimTickable
 
         if (GameController.isTeamMode)
         {
-            if (player.team == attacker.player.team)
+            if (player != null && attacker.player != null
+                && player.team == attacker.player.team)
                 return;
         }
         if (!IngestedFly && ingestingFly != null)
@@ -1603,7 +1609,10 @@ public class Character : MonoBehaviour, ISimTickable
                                     var chr = col.GetComponent<Character>();
                                     if (chr != null && chr != this)
                                     {
-                                        if (!GameController.isTeamMode || (chr.player.team != player.team))
+                                        if (!GameController.isTeamMode
+                                            || chr.player == null
+                                            || player == null
+                                            || chr.player.team != player.team)
                                         {
                                             chr.GetTongueHit(-tongueDir, this);
                                             tongueState = TongueState.RetractingHitEnemy;

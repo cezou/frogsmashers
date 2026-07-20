@@ -76,6 +76,7 @@ public class GameController : MonoBehaviour, ISimTickable
         //Camera.main.aspect = 16f / 9f;
         if (isJoinScreen && FrogSmashers.Net.OnlineMatch.InLobby)
         {
+            isShowDown = false;
             if (joinCanvas != null)
             {
                 foreach (var jc in joinCanvas)
@@ -512,6 +513,10 @@ public class GameController : MonoBehaviour, ISimTickable
         h = StateHash.Mix(h, (int)instance.state);
         h = StateHash.Mix(h, instance.flySpawnDelay);
         h = StateHash.Mix(h, instance.finishDelay);
+        h = StateHash.Mix(h, instance.winningPlayer != null
+            ? activePlayers.IndexOf(instance.winningPlayer) : -1);
+        h = StateHash.Mix(h, instance.redTeamScore);
+        h = StateHash.Mix(h, instance.blueTeamScore);
         h = StateHash.Mix(h, instance.activeFly != null);
         if (instance.activeFly != null)
             h = instance.activeFly.HashSimState(h);
@@ -519,6 +524,7 @@ public class GameController : MonoBehaviour, ISimTickable
         {
             var p = activePlayers[i];
             h = StateHash.Mix(h, p.score);
+            h = StateHash.Mix(h, p.roundWins);
             h = StateHash.Mix(h, p.spawnDelay);
             h = StateHash.Mix(h, p.character != null);
             if (p.character != null)
@@ -910,8 +916,6 @@ public class GameController : MonoBehaviour, ISimTickable
             {
                 wonRound = true;
                 var winner = activePlayers[0];
-                if (winner.character != null)
-                    winner.character.GetComponent<ScorePlum>().ShowText("WIN!", 5f);
                 instance.winningPlayer = winner;
                 lastWinningPlayer = winner;
             }
@@ -930,8 +934,6 @@ public class GameController : MonoBehaviour, ISimTickable
                 {
                     wonRound = true;
                     var winner = activePlayers[0];
-                    if (winner.character != null)
-                        winner.character.GetComponent<ScorePlum>().ShowText("WIN!", 5f);
                     instance.winningPlayer = winner;
                     lastWinningPlayer = winner;
                 }
