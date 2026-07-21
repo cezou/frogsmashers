@@ -14,6 +14,9 @@ HohimBrueh/[Uu]serSettings/
 # Root-level build output (manual builds)
 /builds/
 
+# Cross-compiled API binary staged for deploy by infra/provision.sh
+/infra/remote/frogsmashers-api
+
 # Unity baked lighting per-scene artifacts (regenerated on demand)
 HohimBrueh/Assets/Scenes/**/LightingData.asset
 HohimBrueh/Assets/Scenes/**/LightingData.asset.meta

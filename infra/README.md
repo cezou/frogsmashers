@@ -3,13 +3,14 @@
 Provisioning for the accounts/ELO backend host (issue #26): PostgreSQL 17
 on the existing OCI A1 ARM64 VM, plus daily `pg_dump` backups to OCI
 Object Storage. Research basis: `docs/research/STEAM.md` §3.
+Also deploys the accounts API (`api/`, issue #27) to the same host.
 
 ## Architecture
 
 ```
 dev machine (WSL) ── ssh (.env: OCI_IP/OCI_USER/OCI_SSH_KEY) ──▶ OCI VM
                                                                  │
-   future backend API (Node/Go, same host) ── 127.0.0.1:5432 ──▶ PostgreSQL 17
+   frogsmashers-api (Go, 127.0.0.1:8080) ──── 127.0.0.1:5432 ──▶ PostgreSQL 17
                                                                  │ daily 04:30 UTC
                                           systemd timer ── pg_dump ─▶ Object
                                           (instance principal)       Storage
@@ -32,6 +33,15 @@ dev machine (WSL) ── ssh (.env: OCI_IP/OCI_USER/OCI_SSH_KEY) ──▶ OCI V
   pm2, RustDesk): everything here is namespaced `frogsmashers-*`,
   PostgreSQL tuning is deliberately conservative, and scripts never
   restart anything but PostgreSQL itself.
+- **Accounts API** (`api/`, issue #27): `provision.sh api`
+  cross-compiles a static linux/arm64 binary on the dev machine (Go
+  toolchain or golang docker image — nothing built on the VM) and
+  installs it as the `frogsmashers-api` systemd service, running as a
+  dedicated system user, bound to `127.0.0.1:8080` (no inbound port;
+  Cloudflare HTTPS exposure is a separate task). Its `JWT_SECRET` is
+  generated once on the VM into `/etc/frogsmashers/api.env` (600),
+  never regenerated, alongside `UGS_PROJECT_ID` and `LISTEN_ADDR`.
+  Redeploys just replace the binary and restart the service.
 
 ## How to run
 
@@ -47,12 +57,17 @@ Prerequisite: root `.env` present (see `AGENTS.md` § OCI server).
    the first upload works.
 4. First run + checks: `./infra/provision.sh verify`, and run the backup
    once by hand: `ssh … sudo systemctl start frogsmashers-pg-backup`.
+5. `./infra/provision.sh api` — build + deploy the accounts API
+   (idempotent; re-run to redeploy after code changes).
 
 ## Verification checklist
 
 - `systemctl is-active postgresql@17-main` → `active`; `ss -ltn` shows
   5432 on `127.0.0.1`/`[::1]` **only**.
 - Smoke test as the app role (part of `provision.sh verify`).
+- `systemctl is-active frogsmashers-api` → `active`; `curl
+  127.0.0.1:8080/healthz` → `{"status":"ok"}` (part of
+  `provision.sh verify`).
 - `journalctl -u frogsmashers-pg-backup` ends with `backup OK`; the bucket
   lists `daily/frogsmashers_<ts>.dump` + `daily/globals_<ts>.sql.gz`.
 - Restore test into a scratch DB: `DR.md` §1 (do it once now, then

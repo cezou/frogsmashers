@@ -40,6 +40,13 @@ namespace FrogSmashers.Net.Transport
                 servicesReady = true;
                 Debug.Log("[NetBootstrap] UGS ready, player id "
                     + AuthenticationService.Instance.PlayerId);
+                if (System.Array.IndexOf(
+                    System.Environment.GetCommandLineArgs(),
+                    "-logAuthToken") >= 0)
+                {
+                    Debug.Log("[NetBootstrap] UGS access token "
+                        + AuthenticationService.Instance.AccessToken);
+                }
             }
             EnsureNetworkManager();
         }

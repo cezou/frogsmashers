@@ -1,0 +1,20 @@
+[Unit]
+Description=FrogSmashers accounts API (auth, JWT)
+Wants=network-online.target
+After=postgresql.service network-online.target
+
+[Service]
+Type=simple
+User=frogsmashers-api
+EnvironmentFile=/etc/frogsmashers/db.env
+EnvironmentFile=/etc/frogsmashers/api.env
+ExecStart=/usr/local/bin/frogsmashers-api
+Restart=always
+RestartSec=2
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
