@@ -47,15 +47,23 @@ type(scope): imperative summary, lower-case, no trailing period
 - terse body bullets, only if they add info
 - English, changes only, NO phase/plan jargon (no "Phase 4")
 
+Closes #<issue>
+
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 ```
 - **type**: `feat` / `fix` / `docs` / `refactor` / `test` / `perf` / `build` /
   `ci` / `chore`. **scope** = touched area (`netcode`, `lobby`, `sim`, `ui`,
   `dev-setup`, …).
-- **One commit per feature/task** (squash intermediate steps). If more
+- **Exactly ONE commit per task/session — never several** (squash
+  intermediate steps). Even when a brief or plan lists steps or suggests
+  a commit sequence, collapse everything into a single commit. If more
   work lands on a task that is already committed, amend/squash it into
   that single commit — never stack follow-up commits on the same task.
   Sign every commit with the `Co-Authored-By` trailer.
+- **Close the ticket from the commit**: put `Closes #<issue>` (the
+  task's GitHub issue number, e.g. from the brief header) in the commit
+  body — GitHub auto-closes the issue when the commit lands on
+  `master`. Skip the line only if the task has no issue.
 
 ## 5a. push / ship
 ```bash
