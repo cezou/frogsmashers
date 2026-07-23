@@ -229,8 +229,10 @@ namespace FrogSmashers.Net
 
         /// <summary>
         /// True while a slot still belongs to the active roster. A slot
-        /// drops out the instant its client disconnects, so the rollback
-        /// pace gate can stop waiting on inputs that will never arrive.
+        /// drops out the instant the local peer learns its client left
+        /// (host: disconnect callback; client: RemovePlayer message),
+        /// so the rollback pace gate can stop waiting on inputs that
+        /// will never arrive.
         /// </summary>
         public static bool IsSlotActive(int slot)
         {
@@ -300,7 +302,7 @@ namespace FrogSmashers.Net
             Listen();
             IsHost = true;
             LocalSlot = 0;
-            NetMessages.CurrentEpoch++;
+            NetMessages.BumpEpoch();
             Seed = (ulong)System.DateTime.Now.Ticks;
             CurrentPhase = Phase.Lobby;
             countdown = -1f;
@@ -424,20 +426,33 @@ namespace FrogSmashers.Net
             EnterScore(winnerSlot, over, overallSlot, currentLevel + 1);
         }
 
-        /// <summary>Slot with the most round wins (ties: lowest slot).</summary>
+        /// <summary>
+        /// Slot shown as the overall winner (see
+        /// <see cref="MatchStandings.LeadingSlot"/>): departed slots
+        /// keep their wins in <see cref="matchWinsBySlot"/> but can no
+        /// longer be crowned.
+        /// </summary>
         static int LeadingSlot()
         {
-            int best = 0;
-            int bestWins = -1;
-            for (int i = 0; i < matchWinsBySlot.Length; i++)
+            BuildStandingsInputs(out var active, out var teams);
+            return MatchStandings.LeadingSlot(
+                matchWinsBySlot, active, teams, teamMode);
+        }
+
+        /// <summary>Per-slot activity and team, from the roster.</summary>
+        static void BuildStandingsInputs(
+            out bool[] activeBySlot, out Team[] teamBySlot)
+        {
+            activeBySlot = new bool[maxPlayers];
+            teamBySlot = new Team[maxPlayers];
+            for (int i = 0; i < roster.Count; i++)
             {
-                if (matchWinsBySlot[i] > bestWins)
-                {
-                    bestWins = matchWinsBySlot[i];
-                    best = i;
-                }
+                int slot = roster[i].Slot;
+                if (slot < 0 || slot >= maxPlayers)
+                    continue;
+                activeBySlot[slot] = true;
+                teamBySlot[slot] = roster[i].Team;
             }
-            return best;
         }
 
         /// <summary>
@@ -455,7 +470,7 @@ namespace FrogSmashers.Net
             pendingNextLevel = nextLevel;
             scoreHold = scoreHoldTime;
             CurrentPhase = Phase.Score;
-            NetMessages.CurrentEpoch++;
+            NetMessages.BumpEpoch();
             GameController.levelNo = currentLevel + 1;
             SyncRoundWinsToPlayers();
             var manager = NetworkManager.Singleton;
@@ -532,27 +547,16 @@ namespace FrogSmashers.Net
         }
 
         /// <summary>
-        /// True when the leader's round wins can no longer be matched by
-        /// anyone else, even if they took every remaining round.
+        /// True when the leader's round wins can no longer be matched
+        /// by any contender still in the match, even if they took
+        /// every remaining round (see
+        /// <see cref="MatchStandings.Clinched"/>).
         /// </summary>
         static bool MatchClinched(int remaining)
         {
-            int leader = 0;
-            int second = 0;
-            for (int i = 0; i < matchWinsBySlot.Length; i++)
-            {
-                int w = matchWinsBySlot[i];
-                if (w > leader)
-                {
-                    second = leader;
-                    leader = w;
-                }
-                else if (w > second)
-                {
-                    second = w;
-                }
-            }
-            return leader > second + remaining;
+            BuildStandingsInputs(out var active, out var teams);
+            return MatchStandings.Clinched(
+                matchWinsBySlot, active, teams, teamMode, remaining);
         }
 
         /// <summary>
@@ -577,7 +581,7 @@ namespace FrogSmashers.Net
             lobbyReturnActive = true;
             ResetLocalChoice();
             Seed = (ulong)System.DateTime.Now.Ticks;
-            NetMessages.CurrentEpoch++;
+            NetMessages.BumpEpoch();
             var manager = NetworkManager.Singleton;
             for (int i = 0; i < roster.Count; i++)
             {
@@ -848,6 +852,7 @@ namespace FrogSmashers.Net
             roster.Clear();
             pendingRemovals.Clear();
             parkedPlayers.Clear();
+            GameController.StrippedPlayers.Clear();
             welcomePending = false;
             countdown = -1f;
             scoreHold = -1f;
@@ -873,7 +878,7 @@ namespace FrogSmashers.Net
                     matchWinsBySlot.Length);
             currentLevel = level;
             Seed = seed;
-            NetMessages.CurrentEpoch++;
+            NetMessages.BumpEpoch();
             var manager = NetworkManager.Singleton;
             int notified = 0;
             for (int i = 0; i < roster.Count; i++)
@@ -900,12 +905,26 @@ namespace FrogSmashers.Net
             Debug.Log("[OnlineMatch] MatchStart received: level "
                 + $"{level} slot={slot} count={playerCount} phase="
                 + $"{CurrentPhase}");
+            if (level != lobbyReturnLevel
+                && (level < 0 || level >= matchLevels.Length))
+            {
+                Debug.LogError("[OnlineMatch] MatchStart with invalid"
+                    + $" level {level}, ignoring");
+                return;
+            }
             Seed = seed;
             LocalSlot = slot;
             teamMode = matchTeamMode;
             welcomePending = false;
             if (roster.Count != playerCount)
             {
+                if (level == lobbyReturnLevel)
+                {
+                    Debug.LogError("[OnlineMatch] Roster desync on"
+                        + $" lobby return: have {roster.Count}, host"
+                        + $" says {playerCount}; rebuilding with"
+                        + " contiguous slots");
+                }
                 roster.Clear();
                 for (int s = 0; s < playerCount; s++)
                 {
@@ -959,8 +978,15 @@ namespace FrogSmashers.Net
             BeginScene(matchLevels[level]);
         }
 
+        /// <summary>
+        /// Tears down the per-scene sim/net layer. Strips not yet
+        /// drained by the membership applier belong to the dying sim
+        /// and are dropped too; left behind, the next scene's applier
+        /// would park them as stale Player objects.
+        /// </summary>
         static void TearDownSimLayer()
         {
+            GameController.StrippedPlayers.Clear();
             if (applier != null)
             {
                 SimulationDriver.Unregister(applier);
@@ -991,14 +1017,30 @@ namespace FrogSmashers.Net
             }
         }
 
+        /// <summary>
+        /// Builds (or revives) the Player for a slot. A parked slot
+        /// can be handed to a different person (a leave frees the
+        /// slot, a later join reuses it), so a reused parked player is
+        /// re-branded from the roster and its tallies zeroed. The
+        /// reset is deterministic: re-adds run at the join's apply
+        /// tick on every peer, and a rollback revive re-adds at the
+        /// original join tick, where the tallies were zero anyway.
+        /// </summary>
         static Player MakePlayer(int slot)
         {
+            var entry = FindBySlot(slot);
             if (parkedPlayers.TryGetValue(slot, out var parked))
             {
                 parkedPlayers.Remove(slot);
+                if (entry != null)
+                {
+                    parked.color = entry.Color;
+                    parked.team = entry.Team;
+                }
+                parked.score = 0;
+                parked.roundWins = 0;
                 return parked;
             }
-            var entry = FindBySlot(slot);
             Color color = entry != null
                 ? entry.Color : slotColors[slot % slotColors.Length];
             var player = new Player(
@@ -1233,11 +1275,22 @@ namespace FrogSmashers.Net
             roster.Add(entry);
         }
 
+        /// <summary>
+        /// Client: a peer left. The sim removal stays deterministic
+        /// (applied at the host-chosen tick via
+        /// <see cref="pendingRemovals"/>), but the roster entry is
+        /// dropped immediately — mirroring the host — so the pace gate
+        /// stops waiting on inputs that will never arrive and the next
+        /// transition rebuilds from a roster that matches the host's.
+        /// </summary>
         static void OnRemovePlayer(int slot, uint applyTick)
         {
             if (IsHost)
                 return;
             pendingRemovals.Add((slot, applyTick));
+            var entry = FindBySlot(slot);
+            if (entry != null)
+                roster.Remove(entry);
         }
 
         static void OnLobbyChoice(

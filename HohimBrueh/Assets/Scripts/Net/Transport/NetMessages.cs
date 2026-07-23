@@ -43,6 +43,20 @@ namespace FrogSmashers.Net.Transport
         /// </summary>
         public static byte CurrentEpoch { get; set; }
 
+        /// <summary>
+        /// Bumps the session epoch, wrapping deliberately from 255 to
+        /// 0. The wrap is safe: every receive path compares epochs by
+        /// equality only (never by order), and each transition message
+        /// (MatchStart, Score, Welcome) resyncs clients over a
+        /// reliable-sequenced channel, so a stale epoch value can only
+        /// be matched by a message that stayed in flight across 256
+        /// scene transitions.
+        /// </summary>
+        public static void BumpEpoch()
+        {
+            CurrentEpoch = unchecked((byte)(CurrentEpoch + 1));
+        }
+
         /// <summary>Raised for every input frame received.</summary>
         public static event Action<int, uint, ushort> InputReceived;
 
